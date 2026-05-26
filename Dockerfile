@@ -50,7 +50,30 @@ ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app/examples/example-finances
 RUN pnpm build
 
-# ---------- Stage 2: runner ----------
+# ---------- Stage 2: dev ----------
+# Dev-loop image. Inherits FROM builder so the workspace install + framework
+# dist/ artifacts produced by `tsc -b` are already on disk. We then bind-mount
+# the host source over /app/examples/example-finances and /app/packages at
+# runtime (via docker-compose.override.yaml) so edits propagate into the
+# container; anonymous volumes shield container-owned node_modules and .next
+# from the host.
+#
+# File-watching across the docker boundary requires polling on macOS Docker
+# Desktop — chokidar/watchpack inotify events don't propagate reliably through
+# osxfs/VirtioFS.
+FROM builder AS dev
+ENV NODE_ENV=development \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0 \
+    CHOKIDAR_USEPOLLING=true \
+    WATCHPACK_POLLING=true \
+    WATCHPACK_POLLING_INTERVAL=1000
+WORKDIR /app/examples/example-finances
+EXPOSE 3000
+CMD ["pnpm", "dev"]
+
+# ---------- Stage 3: runner ----------
 # Minimal runtime. .next/standalone is self-contained — Next bundles all
 # required node_modules into the standalone tree.
 FROM node:22-alpine AS runner

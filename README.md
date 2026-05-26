@@ -44,34 +44,52 @@ Visit `http://localhost:3000` → sign in with GitHub or Google → land on `/da
 
 ## Running with Docker
 
-The app ships a multi-stage `Dockerfile` so you can run a deployment-shaped smoke test without installing Node/pnpm locally. The image is wired into the monorepo's `docker-compose.yaml` as the `example-finances` service, on the same `mongo-cluster` network as the Mongo replica set, Prometheus, Grafana, etc.
+The app ships a multi-stage `Dockerfile` with three targets:
+
+| Stage | Purpose |
+|---|---|
+| `builder` | Installs the full workspace, builds framework `dist/` via `tsc -b`, then runs `next build` with `output:'standalone'`. Shared base for `dev` and `runner`. |
+| `dev` | Inherits from `builder` (no extra install). Runs `pnpm dev` (Turbopack) with file-watch polling so HMR works through bind-mounted source. |
+| `runner` | Minimal runtime carrying only `.next/standalone` + `public/`. Runs `node server.js`. Deployment-shaped. |
+
+The compose layout uses Compose's auto-load override convention:
+
+- `docker-compose.yaml` — base, declares the `example-finances` service against the `runner` stage.
+- `docker-compose.override.yaml` — auto-loaded on top, switches the service to the `dev` stage with bind mounts, anonymous-volume `node_modules`/`.next`, and `NODE_ENV=development` + polling env vars.
+
+By default `docker compose ...` merges both files; pass `-f docker-compose.yaml` explicitly to skip the override (CI / prod-shape smoke).
+
+### Dev mode with HMR (default)
 
 ```bash
-# From the monorepo root — first build is ~3 min (downloads node:22-alpine,
-# pulls 1100+ workspace deps, runs tsc -b for the framework packages, then
-# next build with output:'standalone'). Subsequent builds are layer-cached.
-docker compose build example-finances
+# From the monorepo root — `up` auto-loads docker-compose.override.yaml.
+docker compose build example-finances      # builds the dev stage
+docker compose up -d example-finances       # dev container with HMR
+docker compose logs -f example-finances     # see "▲ Next.js ... ✓ Ready"
+```
 
-# `up -d` brings the whole stack (Mongo + observability + the app) online.
-docker compose up -d
+Edits to `examples/example-finances/src/**` propagate into the container and HMR reflects them in the browser within ~1–2s. Edits to `packages/**` also propagate (the workspace dir is bind-mounted too), but framework changes typically need a Next.js full-page reload because they live behind `workspace:*` resolution.
 
-# Or just the app + its Mongo deps:
-docker compose up -d example-finances
+File-watching uses polling (`CHOKIDAR_USEPOLLING=true` + `WATCHPACK_POLLING=true`) because Docker Desktop on macOS doesn't propagate inotify reliably through osxfs/VirtioFS. The minor CPU overhead is expected; without it, edits silently fail to trigger rebuilds.
 
-# Tail the app's logs
-docker compose logs -f example-finances
+The anonymous-volume strategy means the container owns its own `/app/node_modules`, `/app/examples/example-finances/node_modules`, and `/app/examples/example-finances/.next` — these are NOT shared with the host. The first `up` runs the install layer from the image; subsequent `up`s reuse the same anonymous volumes (run `docker compose down -v` to reset them).
 
-# Hit it
+### Production-shape smoke test
+
+To run the standalone artifact (no HMR, prod env, same as a real deploy), bypass the override file with `-f`:
+
+```bash
+docker compose -f docker-compose.yaml build example-finances    # builds the runner stage
+docker compose -f docker-compose.yaml up -d example-finances    # node server.js
+```
+
+Both modes hit the app at `http://localhost:3000`:
+
+```bash
 curl -fsS http://localhost:3000/                        # landing page
 curl -fsS http://localhost:3000/api/auth/providers      # Auth.js providers JSON
 curl -fsS -H "Authorization: Bearer $PROM_METRICS_TOKEN" \
      http://localhost:3000/api/metrics                  # Prometheus scrape
-```
-
-After code changes, rebuild the image:
-
-```bash
-docker compose build example-finances && docker compose up -d example-finances
 ```
 
 ### How the build works
@@ -100,12 +118,13 @@ Note the internal ports are still `27020/27021/27022` (not the conventional `270
 
 | Goal | Use |
 |---|---|
-| Iterate on the app — fast HMR, source maps, easy debugging | `pnpm dev` |
-| Smoke-test the app in a deployment-shaped environment | `docker compose up -d example-finances` |
-| Run the app without installing Node/pnpm locally | Docker |
-| Sanity-check workspace dep resolution against a clean install | Docker (re-runs `pnpm install` from the lockfile) |
+| Fastest iteration loop (Turbopack on the host, no container overhead) | `pnpm dev` |
+| Iterate inside the container with HMR | `docker compose up -d example-finances` (dev mode, the default) |
+| Smoke-test the deployment-shaped image | `docker compose -f docker-compose.yaml up -d example-finances` |
+| Run the app without installing Node/pnpm locally | Docker (either mode) |
+| Sanity-check workspace dep resolution against a clean install | Docker (`pnpm install` runs in the builder layer) |
 
-`pnpm dev` is strictly faster for development. Docker is for verifying the prod path works end-to-end.
+`pnpm dev` on the host is strictly faster than dev-mode docker. Use dev-mode docker when you need to reproduce a container-only issue with HMR still working; use the prod-shape mode (`-f docker-compose.yaml`) for deployment validation.
 
 ## Directory layout
 
