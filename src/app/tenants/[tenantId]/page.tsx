@@ -16,6 +16,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { EmptyState } from '@/components/empty-state';
+import { UsersIcon } from 'lucide-react';
 
 type Params = { tenantId: string };
 
@@ -84,7 +86,15 @@ export default async function TenantDetailPage(props: {
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3">
                     {memberships.length === 0 ? (
-                        <p className="text-muted-foreground">No members yet.</p>
+                        <EmptyState
+                            icon={<UsersIcon />}
+                            title="No members yet"
+                            description={
+                                canManage
+                                    ? 'Invite someone with the form below to get started.'
+                                    : 'Ask an owner or admin to invite people.'
+                            }
+                        />
                     ) : (
                         <ul className="flex flex-col gap-2">
                             {memberships.map((m) => (

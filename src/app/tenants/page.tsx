@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Building2Icon } from 'lucide-react';
 import { auth } from '@/auth';
 import { readModels } from '@/sorc';
 import { Button } from '@/components/ui/button';
@@ -8,6 +9,7 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import { EmptyState } from '@/components/empty-state';
 
 export default async function TenantsPage() {
     const session = await auth();
@@ -40,11 +42,16 @@ export default async function TenantsPage() {
             </header>
 
             {tenants.length === 0 ? (
-                <Card>
-                    <CardContent className="p-6 text-muted-foreground">
-                        You don&apos;t belong to any tenants yet.
-                    </CardContent>
-                </Card>
+                <EmptyState
+                    icon={<Building2Icon />}
+                    title="No tenants yet"
+                    description="Tenants are isolated workspaces — every account, transaction, and member lives inside one."
+                    action={
+                        <Link href="/tenants/new">
+                            <Button>Create your first tenant</Button>
+                        </Link>
+                    }
+                />
             ) : (
                 <ul className="flex flex-col gap-3">
                     {tenants.map(({ tenant, membership }) =>

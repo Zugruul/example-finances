@@ -6,6 +6,8 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { EmptyState } from '@/components/empty-state';
+import { ScrollTextIcon } from 'lucide-react';
 
 export default async function AdminAuditLogPage() {
     const activity = (await readModels.adminActivity.find({})).sort(
@@ -26,9 +28,11 @@ export default async function AdminAuditLogPage() {
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3">
                     {activity.length === 0 ? (
-                        <p className="text-muted-foreground">
-                            No admin actions recorded yet.
-                        </p>
+                        <EmptyState
+                            icon={<ScrollTextIcon />}
+                            title="No admin actions yet"
+                            description="Grants, impersonations, and other admin events will show up here once recorded."
+                        />
                     ) : (
                         activity.map((a) => (
                             <div

@@ -13,6 +13,8 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import { EmptyState } from '@/components/empty-state';
+import { UserIcon } from 'lucide-react';
 export default async function AdminUsersPage() {
     const [users, allRoles] = await Promise.all([
         listAuthUsers(200),
@@ -35,10 +37,11 @@ export default async function AdminUsersPage() {
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3">
                     {users.length === 0 ? (
-                        <p className="text-muted-foreground">
-                            No users yet. Sign in once to populate the Auth.js
-                            users collection.
-                        </p>
+                        <EmptyState
+                            icon={<UserIcon />}
+                            title="No users yet"
+                            description="Sign in once to populate the Auth.js users collection."
+                        />
                     ) : (
                         users.map((u) => {
                             const userId = String(u._id);
