@@ -8,8 +8,13 @@ import type {
     PlatformRoleStreamInstance,
 } from '@/domains/admin';
 import type { SorcUUID } from '@event-sorcerer/core';
+import type { ImpersonationState } from '@/lib/impersonation';
 
 const isProd = process.env.NODE_ENV === 'production';
+
+export const SESSION_TOKEN_COOKIE_NAME = isProd
+    ? '__Host-finances.session-token'
+    : 'finances.session-token';
 
 // Singleton Mongo client. The Auth.js adapter accepts a Promise<MongoClient>.
 const mongoUri =
@@ -20,12 +25,12 @@ const globalForMongo = globalThis as unknown as {
     __financesAuthMongo?: Promise<MongoClient>;
 };
 
-const clientPromise =
+export const authMongoClientPromise =
     globalForMongo.__financesAuthMongo ??
     new MongoClient(mongoUri).connect();
 
 if (!isProd) {
-    globalForMongo.__financesAuthMongo = clientPromise;
+    globalForMongo.__financesAuthMongo = authMongoClientPromise;
 }
 
 function platformRoleStream(userId: string): PlatformRoleStreamInstance {
@@ -33,7 +38,7 @@ function platformRoleStream(userId: string): PlatformRoleStreamInstance {
 }
 
 export const authConfig: NextAuthConfig = {
-    adapter: MongoDBAdapter(clientPromise, { databaseName: 'finances_auth' }),
+    adapter: MongoDBAdapter(authMongoClientPromise, { databaseName: 'finances_auth' }),
     session: { strategy: 'database' },
     providers: [
         GitHub({
@@ -50,9 +55,7 @@ export const authConfig: NextAuthConfig = {
     },
     cookies: {
         sessionToken: {
-            name: isProd
-                ? '__Host-finances.session-token'
-                : 'finances.session-token',
+            name: SESSION_TOKEN_COOKIE_NAME,
             options: {
                 httpOnly: true,
                 sameSite: 'lax',
@@ -65,14 +68,22 @@ export const authConfig: NextAuthConfig = {
         async session({ session, user }) {
             if (session.user) {
                 session.user.id = user.id;
-                // Event-sourced platform role: read from the `platform-roles`
-                // read model. The `ADMIN_EMAILS` env var was removed in
-                // favour of `AdminGranted`/`AdminRemoved` events on per-user
-                // `platform-role-{userId}` streams.
                 const role = await readModels.platformRoles.findOne({
                     userId: user.id as SorcUUID,
                 });
                 session.user.isAdmin = role?.role === 'admin';
+
+                // Impersonation state lives on the Auth.js session document
+                // (`finances_auth.sessions.impersonation`). The MongoDB
+                // adapter returns the full session doc here but doesn't
+                // surface custom fields in its TypeScript types — cast to
+                // read it.
+                const raw = session as typeof session & {
+                    impersonation?: ImpersonationState;
+                };
+                if (raw.impersonation) {
+                    session.user.impersonation = raw.impersonation;
+                }
             }
             return session;
         },

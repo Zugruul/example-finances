@@ -29,19 +29,18 @@ pnpm infra:up                         # starts the shared Mongo replica set + Ja
 pnpm --filter example-finances dev    # boots Next.js on http://localhost:3000
 ```
 
-Visit `http://localhost:3000` → sign in with GitHub or Google → land on `/dashboard`. Create a tenant at `/tenants/new`; invite teammates from the tenant detail page. If your account's email is in `ADMIN_EMAILS`, the `/admin` link is gated open and you can impersonate any registered user.
+Visit `http://localhost:3000` → sign in with GitHub or Google → land on `/dashboard`. Create a tenant at `/tenants/new`; invite teammates from the tenant detail page. The first user to sign in is auto-granted platform-admin (event-sourced via the `platform-role-{userId}` stream); once admin, the `/admin` link is gated open and you can impersonate any registered user, grant/remove admin from `/admin/users`, and review the audit log. Use `pnpm admin:grant <email>` (see `.claude/skills/grant-admin.md`) as the CLI escape hatch when bootstrapping a specific operator or recovering from a wipeout.
 
 ### Environment matrix (see `.env.example`)
 
 | Var | Purpose | Required? |
 |---|---|---|
-| `AUTH_SECRET` | Auth.js signing key. Also keys the HMAC on the impersonation cookie. `openssl rand -base64 33`. | required (prod) |
+| `AUTH_SECRET` | Auth.js signing key. `openssl rand -base64 33`. | required (prod) |
 | `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` | GitHub OAuth credentials. | required to enable GH |
 | `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | Google OAuth credentials. | required to enable Google |
 | `AUTH_MONGO_URI` | Mongo URI for the Auth.js adapter. Defaults to the local replica set `localhost:27020-22/?replicaSet=rs0`. | required |
 | `FINANCES_MONGO_URI` | Override for the event-store Mongo URI. Falls back to `AUTH_MONGO_URI`, then to the local replica set. | optional |
 | `PROM_METRICS_TOKEN` | Bearer for `/api/metrics`. Endpoint returns `503 not configured` if unset. | required to expose metrics |
-| `ADMIN_EMAILS` | Comma-separated list of email addresses granted `session.user.isAdmin === true` and access to `/admin/**`. | optional |
 
 ## Directory layout
 
@@ -56,14 +55,14 @@ src/
 │   ├── dashboard/                    # landing destination post-signin
 │   └── tenants/                      # /tenants, /tenants/new, /tenants/[id], /tenants/[id]/members
 ├── components/
-│   ├── impersonation-banner.tsx      # RSC banner rendered when impersonation cookie present
+│   ├── impersonation-banner.tsx      # RSC banner rendered when the Auth.js session has an impersonation field
 │   └── ui/                           # shadcn primitives (13 installed)
 ├── domains/                          # one folder per domain; barrel exports = public surface
 │   ├── admin/                        # AdminActions aggregate + admin-activity read model
 │   └── tenants/                      # Tenant + Membership aggregates + read models
 ├── lib/
 │   ├── auth-users.ts                 # direct Mongo read of Auth.js users collection (admin shadow-login source)
-│   ├── impersonation.ts              # HMAC sign/verify for the impersonation cookie
+│   ├── impersonation.ts              # set/clear the `impersonation` field on the Auth.js session document
 │   └── utils.ts                      # cn() helper
 ├── server/                           # Next.js server actions
 │   ├── admin.ts                      # startImpersonationAction / endImpersonationAction
@@ -129,21 +128,21 @@ Server actions in `src/server/tenants.ts` validate the session, then check the c
 
 ## Admin & impersonation
 
-System-wide admin role (separate from per-tenant roles). Bootstrap-only for Wave A — listed in `ADMIN_EMAILS` → `session.user.isAdmin = true` (computed in the Auth.js `session` callback).
+System-wide admin role (separate from per-tenant roles). Event-sourced via the `PlatformRole` aggregate on `platform-role-{userId}` streams (`AdminGranted` / `AdminRemoved` events) and the `platform-roles` read model. The Auth.js `session` callback looks up `readModels.platformRoles.findOne({userId})` and sets `session.user.isAdmin = role?.role === 'admin'`. Bootstrap is **first-user-is-admin** — when the first OAuth signup happens with an empty `platform-roles` read model, `events.signIn` emits `AdminGranted` with `grantedByUserId: 'system'` and `reason: 'First user (auto-bootstrap)'`. Subsequent admins are granted from `/admin/users`. The `admin:grant <email>` CLI script is the escape hatch (`grantedByUserId: 'cli-bootstrap'`) for operator bootstrap and recovery if every admin gets removed.
 
 ### Routes
 
 - `/admin` — dashboard: 4 stat tiles (active tenants, total users, active impersonations, admin events 24h) + nav
-- `/admin/users` — direct list of every Auth.js user from the `finances_auth.users` Mongo collection, one "Impersonate" button per row
+- `/admin/users` — direct list of every Auth.js user from the `finances_auth.users` Mongo collection. Per row: Impersonate button + Grant/Remove admin button (state-driven by the `platform-roles` read model). `removeAdminAction` has an anti-self-lockout guard — it refuses to remove the last platform admin.
 - `/admin/audit-log` — reverse-chronological feed of every event in the `admin-actions-{adminId}` streams
 
 ### Shadow login flow
 
 1. Admin clicks "Impersonate" → `startImpersonationAction` (server action, gated on `isAdmin`).
-2. Action emits `ImpersonationStarted` to `admin-actions-{adminId}` and sets a signed `finances.impersonate` cookie carrying `{actorAdminId, targetUserId, targetEmail, startedAt}`.
-3. Cookie is HMAC-SHA256-signed with `AUTH_SECRET`, base64url-encoded JSON body + `.signature`, verified with `crypto.timingSafeEqual`. Lives in `src/lib/impersonation.ts`.
+2. Action emits `ImpersonationStarted` to `admin-actions-{adminId}` and writes an `impersonation` field — `{actorAdminId, targetUserId, targetEmail, startedAt}` — onto the Auth.js session document (`finances_auth.sessions`) keyed by the current `sessionToken` cookie.
+3. The Auth.js MongoDB adapter returns the full session doc on every `session` callback invocation. The callback in `src/auth.ts` surfaces the `impersonation` field on `session.user.impersonation`. Lives in `src/lib/impersonation.ts`.
 4. Persistent amber banner (`ImpersonationBanner` in root layout) renders on every page: *"Impersonating <email>"* with a **Return to admin** form-action that hits `endImpersonationAction`.
-5. End action emits `ImpersonationEnded`, deletes the cookie, redirects to `/admin`.
+5. End action emits `ImpersonationEnded`, `$unset`s the `impersonation` field from the session doc, redirects to `/admin`.
 
 ### Audit log
 
@@ -156,10 +155,10 @@ Read model `admin-activity` is one append-only doc per event, keyed by event UUI
 
 ### Security caveats (Wave A)
 
-- The impersonation cookie has no `maxAge` / `expires` — it's session-scoped on the browser. Admin closing the tab drops it; closing the whole browser drops it (per the absence of persistent storage). Servers re-verify the HMAC on every action.
+- Impersonation state lives on the Auth.js session document, not in a separate cookie. Signing out deletes the session row, which clears impersonation automatically. Session expiry (Auth.js's default 30-day TTL on the sessions collection) clears it on expiration. There is intentionally only one cookie to protect (`__Host-finances.session-token` in prod), not two.
 - The `actor` field on events emitted **while impersonating** is currently the impersonated user's id, not the admin's. Recording the admin as the actor when impersonating needs framework-side request-context plumbing (AsyncLocalStorage through the Sorc); deferred to Wave B (see `decisions-log.md` Q-Open).
 - `/admin/**` is double-gated: `proxy.ts` returns 403 for non-admin requests, and every admin server action calls `requireAdmin()` so direct POSTs are rejected too.
-- Admin role assignment is env-var-only in Wave A. There is intentionally no admin-management UI yet.
+- Admin role assignment is event-sourced (NOT env-var). Grant/Remove flows through the `PlatformRole` aggregate; the audit trail is queryable historically, and revocation requires no deploy. `removeAdminAction` has an anti-self-lockout guard. The `admin:grant` CLI is documented for last-resort bootstrap/recovery.
 
 ## Prometheus scrape
 
@@ -193,7 +192,7 @@ The registry holds:
 - CSP with **per-request nonces** generated in `proxy.ts` (`'strict-dynamic'`).
 - Static security headers in `next.config.ts`: `Strict-Transport-Security`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Content-Type-Options: nosniff`.
 - Routes under `/dashboard`, `/tenants`, `/profile`, `/admin` redirect unauth users to `/auth/signin`. `/admin/**` additionally requires `session.user.isAdmin === true`.
-- The impersonation cookie is signed with the same `AUTH_SECRET` that signs the session cookie; tampering is rejected via constant-time HMAC compare.
+- Impersonation state is stored on the Auth.js session document (`finances_auth.sessions.impersonation`), never in a separate cookie. There is one signed surface to protect — the Auth.js session cookie — and signing out invalidates impersonation in lockstep with the session itself.
 
 ## Beyond Wave A
 

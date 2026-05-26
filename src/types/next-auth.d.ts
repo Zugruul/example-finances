@@ -8,6 +8,12 @@ declare module 'next-auth' {
             name?: string | null;
             image?: string | null;
             isAdmin?: boolean;
+            impersonation?: {
+                actorAdminId: string;
+                targetUserId: string;
+                targetEmail: string;
+                startedAt: string;
+            };
         };
     }
 }

@@ -3,18 +3,32 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { auth } from '@/auth';
+import {
+    auth,
+    authMongoClientPromise,
+    SESSION_TOKEN_COOKIE_NAME,
+} from '@/auth';
 import { aggregates, readModels } from '@/sorc';
 import {
-    IMPERSONATION_COOKIE,
-    encodeImpersonationCookie,
-    decodeImpersonationCookie,
+    setImpersonationOnSession,
+    clearImpersonationFromSession,
 } from '@/lib/impersonation';
 import type {
     AdminActionsStreamInstance,
     PlatformRoleStreamInstance,
 } from '@/domains/admin';
 import type { SorcUUID } from '@event-sorcerer/core';
+
+async function requireSessionToken(): Promise<string> {
+    const cookieStore = await cookies();
+    const token = cookieStore.get(SESSION_TOKEN_COOKIE_NAME)?.value;
+    if (!token) {
+        throw new Error(
+            'No Auth.js session cookie present — cannot mutate session impersonation state.',
+        );
+    }
+    return token;
+}
 
 async function requireAdmin() {
     const session = await auth();
@@ -41,6 +55,8 @@ export async function startImpersonationAction(formData: FormData) {
         throw new Error('Target user id and email are required.');
     }
 
+    const sessionToken = await requireSessionToken();
+
     const stream = adminStream(adminId);
     await aggregates.adminActions.execute(
         'startImpersonation',
@@ -53,20 +69,12 @@ export async function startImpersonationAction(formData: FormData) {
         { store: 'mongostore' as never, stream },
     );
 
-    const startedAt = new Date().toISOString();
-    const cookie = encodeImpersonationCookie({
+    const client = await authMongoClientPromise;
+    await setImpersonationOnSession(client, sessionToken, {
         actorAdminId: adminId,
         targetUserId,
         targetEmail,
-        startedAt,
-    });
-
-    const cookieStore = await cookies();
-    cookieStore.set(IMPERSONATION_COOKIE, cookie, {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-        secure: process.env.NODE_ENV === 'production',
+        startedAt: new Date().toISOString(),
     });
 
     revalidatePath('/');
@@ -77,25 +85,23 @@ export async function endImpersonationAction() {
     const session = await requireAdmin();
     const adminId = session.user!.id as SorcUUID;
 
-    const cookieStore = await cookies();
-    const existing = decodeImpersonationCookie(
-        cookieStore.get(IMPERSONATION_COOKIE)?.value,
-    );
+    const sessionToken = await requireSessionToken();
+    const client = await authMongoClientPromise;
+    const prior = await clearImpersonationFromSession(client, sessionToken);
 
-    if (existing) {
+    if (prior) {
         const stream = adminStream(adminId);
         await aggregates.adminActions.execute(
             'endImpersonation',
             {
                 actorAdminId: adminId,
-                targetUserId: existing.targetUserId as SorcUUID,
+                targetUserId: prior.targetUserId as SorcUUID,
                 stream,
             } as never,
             { store: 'mongostore' as never, stream },
         );
     }
 
-    cookieStore.delete(IMPERSONATION_COOKIE);
     revalidatePath('/');
     redirect('/admin');
 }
