@@ -17,7 +17,8 @@ import { metricsPrometheus } from '@event-sorcerer/metrics-prometheus';
 import { cryptoshredding } from '@event-sorcerer/plugin-cryptoshredding';
 import {
     SorcReadModel,
-    MemoryReadModelStore,
+    MongoReadModelStore,
+    type MongoReadModelIndex,
 } from '@event-sorcerer/read-models';
 import { collectDefaultMetrics } from 'prom-client';
 import {
@@ -98,7 +99,10 @@ type FinancesSorcCache = {
     bundle: ReturnType<typeof buildSorc>;
     metrics: ReturnType<typeof metricsPrometheus>;
     readModels: ReturnType<typeof buildReadModels>;
+    readModelClient: MongoClient;
 };
+
+const READMODEL_DB_NAME = 'finances_readmodels';
 
 function buildSorc(metrics: ReturnType<typeof metricsPrometheus>) {
     type AnyEventClass = new (
@@ -218,14 +222,32 @@ function buildSorc(metrics: ReturnType<typeof metricsPrometheus>) {
     return { sorc, aggregates };
 }
 
-function buildReadModels(sorc: ReturnType<typeof buildSorc>['sorc']) {
+function makeStore<Doc extends Record<string, any>>(
+    client: MongoClient,
+    collectionName: string,
+    indexes: MongoReadModelIndex[],
+) {
+    return new MongoReadModelStore<Doc>({
+        client,
+        dbName: READMODEL_DB_NAME,
+        collectionName,
+        indexes,
+    });
+}
+
+function buildReadModels(
+    sorc: ReturnType<typeof buildSorc>['sorc'],
+    client: MongoClient,
+) {
     const tenants = new SorcReadModel<TenantDoc, any, any, typeof sorc>(
         sorc,
         {
             name: 'tenants',
             storeName: 'mongostore',
             events: tenantsListen as never,
-            store: new MemoryReadModelStore<TenantDoc>(),
+            store: makeStore<TenantDoc>(client, 'rm-tenants', [
+                { key: { tenantId: 1 }, options: { unique: true } },
+            ]),
             key: tenantsKey as never,
             apply: tenantsApply as never,
         },
@@ -240,7 +262,12 @@ function buildReadModels(sorc: ReturnType<typeof buildSorc>['sorc']) {
         name: 'memberships',
         storeName: 'mongostore',
         events: membershipsListen as never,
-        store: new MemoryReadModelStore<MembershipDoc>(),
+        store: makeStore<MembershipDoc>(client, 'rm-memberships', [
+            { key: { membershipId: 1 }, options: { unique: true } },
+            { key: { tenantId: 1 } },
+            { key: { userId: 1 } },
+            { key: { invitedEmail: 1 } },
+        ]),
         key: membershipsKey as never,
         apply: membershipsApply as never,
     });
@@ -254,7 +281,10 @@ function buildReadModels(sorc: ReturnType<typeof buildSorc>['sorc']) {
         name: 'admin-activity',
         storeName: 'mongostore',
         events: adminActivityListen as never,
-        store: new MemoryReadModelStore<AdminActivityDoc>(),
+        store: makeStore<AdminActivityDoc>(client, 'rm-admin-activity', [
+            { key: { eventId: 1 }, options: { unique: true } },
+            { key: { occurredAt: -1 } },
+        ]),
         key: adminActivityKey as never,
         apply: adminActivityApply as never,
     });
@@ -268,7 +298,10 @@ function buildReadModels(sorc: ReturnType<typeof buildSorc>['sorc']) {
         name: 'platform-roles',
         storeName: 'mongostore',
         events: platformRolesListen as never,
-        store: new MemoryReadModelStore<PlatformRoleDoc>(),
+        store: makeStore<PlatformRoleDoc>(client, 'rm-platform-roles', [
+            { key: { userId: 1 }, options: { unique: true } },
+            { key: { role: 1 } },
+        ]),
         key: platformRolesKey as never,
         apply: platformRolesApply as never,
     });
@@ -279,7 +312,11 @@ function buildReadModels(sorc: ReturnType<typeof buildSorc>['sorc']) {
             name: 'activity',
             storeName: 'mongostore',
             events: activityListen as never,
-            store: new MemoryReadModelStore<ActivityDoc>(),
+            store: makeStore<ActivityDoc>(client, 'rm-activity', [
+                { key: { eventId: 1 }, options: { unique: true } },
+                { key: { tenantId: 1 } },
+                { key: { occurredAt: -1 } },
+            ]),
             key: activityKey as never,
             apply: activityApply as never,
         },
@@ -291,7 +328,10 @@ function buildReadModels(sorc: ReturnType<typeof buildSorc>['sorc']) {
             name: 'users-by-id',
             storeName: 'mongostore',
             events: usersByIdListen as never,
-            store: new MemoryReadModelStore<UserByIdDoc>(),
+            store: makeStore<UserByIdDoc>(client, 'rm-users-by-id', [
+                { key: { userId: 1 }, options: { unique: true } },
+                { key: { email: 1 } },
+            ]),
             key: usersByIdKey as never,
             apply: usersByIdApply as never,
         },
@@ -319,7 +359,17 @@ if (!cache) {
     });
     collectDefaultMetrics({ register: metrics.registry });
     const bundle = buildSorc(metrics);
-    const readModels = buildReadModels(bundle.sorc);
+
+    // Dedicated MongoClient for read-model storage. Same URI as the event
+    // store but a separate database (`finances_readmodels`). Connected lazily
+    // — the driver dials on the first operation.
+    const readModelClient = new MongoClient(
+        process.env.FINANCES_MONGO_URI ??
+            process.env.AUTH_MONGO_URI ??
+            'mongodb://localhost:27020,localhost:27021,localhost:27022/?replicaSet=rs0',
+    );
+
+    const readModels = buildReadModels(bundle.sorc, readModelClient);
 
     // Subscribe read models at boot. 5s default polling per read-models pkg.
     void readModels.tenants.subscribe();
@@ -329,7 +379,7 @@ if (!cache) {
     void readModels.activity.subscribe();
     void readModels.usersById.subscribe();
 
-    cache = { bundle, metrics, readModels };
+    cache = { bundle, metrics, readModels, readModelClient };
     if (process.env.NODE_ENV !== 'production') {
         globalForSorc.__financesSorc = cache;
     }

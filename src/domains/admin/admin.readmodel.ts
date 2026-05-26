@@ -19,6 +19,8 @@ export type AdminActivityDoc = {
     targetEmail?: string;
     action?: string;
     note?: string;
+    /** Only set when `kind === 'ImpersonationEnded'`. */
+    reason?: 'user' | 'expired';
     occurredAt: Date;
 };
 
@@ -41,7 +43,9 @@ type AdminApplyEvent = (
 ) & { uuid?: string; id?: string };
 
 export function adminActivityKey(event: AdminApplyEvent) {
-    return { eventId: event.uuid ?? event.id ?? `${event.stream}-${event.revision}` };
+    return {
+        eventId: event.uuid ?? event.id ?? `${event.stream}-${event.revision}`,
+    };
 }
 
 export function adminActivityApply(
@@ -69,6 +73,9 @@ export function adminActivityApply(
                 actorAdminId: event.payload.actorAdminId,
                 kind: 'ImpersonationEnded',
                 targetUserId: event.payload.targetUserId,
+                // Pre-2026-05-26 events don't carry `reason`; treat
+                // absence as `'user'` per the schema invariant.
+                reason: event.payload.reason ?? 'user',
                 occurredAt: event.payload.endedAt,
             };
         case 'AdminActionTaken':

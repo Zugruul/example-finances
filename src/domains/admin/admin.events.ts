@@ -50,6 +50,15 @@ export class ImpersonationEndedPayload extends SorcPayload {
 
     @property({ type: 'date', required: true })
     endedAt!: Date;
+
+    /**
+     * Why the impersonation ended. `'user'` for the admin clicking
+     * "Return to admin" in the banner, `'expired'` for the TTL sweep in
+     * the auth.ts session callback. Older events (pre-2026-05-26) do not
+     * carry this field — consumers MUST treat absence as `'user'`.
+     */
+    @property({ type: 'string' })
+    reason?: 'user' | 'expired';
 }
 
 @domain('admin')

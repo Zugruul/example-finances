@@ -62,6 +62,7 @@ export type StartImpersonationCmd = {
 export type EndImpersonationCmd = {
     actorAdminId: SorcUUID;
     targetUserId: SorcUUID;
+    reason?: 'user' | 'expired';
     stream: AdminActionsStreamInstance;
 };
 
@@ -109,6 +110,7 @@ export const adminCommands = {
                 actorAdminId: cmd.actorAdminId,
                 targetUserId: cmd.targetUserId,
                 endedAt: new Date(),
+                reason: cmd.reason ?? 'user',
             } as InstanceType<typeof ImpersonationEndedEvent>['payload'],
             { stream: cmd.stream },
         );

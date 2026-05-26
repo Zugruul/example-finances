@@ -5,11 +5,16 @@ import { MongoDBAdapter } from '@auth/mongodb-adapter';
 import { MongoClient } from 'mongodb';
 import { aggregates, readModels } from '@/sorc';
 import type {
+    AdminActionsStreamInstance,
     PlatformRoleStreamInstance,
 } from '@/domains/admin';
 import type { UserStreamInstance } from '@/domains/users';
 import type { SorcUUID } from '@event-sorcerer/core';
-import type { ImpersonationState } from '@/lib/impersonation';
+import {
+    type ImpersonationState,
+    isImpersonationExpired,
+    sweepExpiredImpersonation,
+} from '@/lib/impersonation';
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -27,8 +32,7 @@ const globalForMongo = globalThis as unknown as {
 };
 
 export const authMongoClientPromise =
-    globalForMongo.__financesAuthMongo ??
-    new MongoClient(mongoUri).connect();
+    globalForMongo.__financesAuthMongo ?? new MongoClient(mongoUri).connect();
 
 if (!isProd) {
     globalForMongo.__financesAuthMongo = authMongoClientPromise;
@@ -42,8 +46,14 @@ function userStream(userId: string): UserStreamInstance {
     return `user-${userId}` as UserStreamInstance;
 }
 
+function adminActionsStream(adminId: string): AdminActionsStreamInstance {
+    return `admin-actions-${adminId}` as AdminActionsStreamInstance;
+}
+
 export const authConfig: NextAuthConfig = {
-    adapter: MongoDBAdapter(authMongoClientPromise, { databaseName: 'finances_auth' }),
+    adapter: MongoDBAdapter(authMongoClientPromise, {
+        databaseName: 'finances_auth',
+    }),
     session: { strategy: 'database' },
     providers: [
         GitHub({
@@ -85,9 +95,62 @@ export const authConfig: NextAuthConfig = {
                 // read it.
                 const raw = session as typeof session & {
                     impersonation?: ImpersonationState;
+                    sessionToken?: string;
                 };
                 if (raw.impersonation) {
-                    session.user.impersonation = raw.impersonation;
+                    if (isImpersonationExpired(raw.impersonation)) {
+                        // TTL sweep: hard-cap at IMPERSONATION_TTL_MS since
+                        // startedAt. Use the CAS-atomic
+                        // sweepExpiredImpersonation helper — only the
+                        // caller that wins the $unset gets a non-null
+                        // return, and only that caller emits the
+                        // synthetic ImpersonationEnded {reason:'expired'}
+                        // audit event. Concurrent session reads see null
+                        // and stay silent.
+                        //
+                        // Fail-closed: any error in the sweep logs and
+                        // falls through WITHOUT surfacing impersonation
+                        // on the session. An expired session must never
+                        // appear active because of a transient hiccup.
+                        const expired = raw.impersonation;
+                        try {
+                            const sessionToken = raw.sessionToken;
+                            if (sessionToken) {
+                                const client = await authMongoClientPromise;
+                                const cleared = await sweepExpiredImpersonation(
+                                    client,
+                                    sessionToken,
+                                    expired.startedAt,
+                                );
+                                if (cleared) {
+                                    const adminId =
+                                        expired.actorAdminId as SorcUUID;
+                                    const stream = adminActionsStream(adminId);
+                                    await aggregates.adminActions.execute(
+                                        'endImpersonation',
+                                        {
+                                            actorAdminId: adminId,
+                                            targetUserId:
+                                                expired.targetUserId as SorcUUID,
+                                            reason: 'expired',
+                                            stream,
+                                        } as never,
+                                        {
+                                            store: 'mongostore' as never,
+                                            stream,
+                                        },
+                                    );
+                                }
+                            }
+                        } catch (err) {
+                            console.error(
+                                '[auth] impersonation TTL sweep failed',
+                                err,
+                            );
+                        }
+                    } else {
+                        session.user.impersonation = raw.impersonation;
+                    }
                 }
             }
             return session;

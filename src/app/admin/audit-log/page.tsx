@@ -1,10 +1,5 @@
 import { readModels } from '@/sorc';
-import {
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/empty-state';
 import { ScrollTextIcon } from 'lucide-react';
@@ -12,8 +7,7 @@ import { ScrollTextIcon } from 'lucide-react';
 export default async function AdminAuditLogPage() {
     const activity = (await readModels.adminActivity.find({})).sort(
         (a, b) =>
-            new Date(b.occurredAt).getTime() -
-            new Date(a.occurredAt).getTime(),
+            new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
     );
 
     return (
@@ -40,7 +34,20 @@ export default async function AdminAuditLogPage() {
                                 className="flex flex-col gap-1 rounded-md border p-3"
                             >
                                 <div className="flex items-center justify-between gap-2">
-                                    <Badge variant="outline">{a.kind}</Badge>
+                                    <div className="flex items-center gap-2">
+                                        <Badge variant="outline">
+                                            {a.kind}
+                                        </Badge>
+                                        {a.kind === 'ImpersonationEnded' &&
+                                        a.reason === 'expired' ? (
+                                            <Badge
+                                                variant="outline"
+                                                className="border-amber-500 text-amber-700 dark:text-amber-300"
+                                            >
+                                                expired
+                                            </Badge>
+                                        ) : null}
+                                    </div>
                                     <span className="text-xs text-muted-foreground">
                                         {new Date(
                                             a.occurredAt,

@@ -79,9 +79,7 @@ export async function startImpersonationAction(formData: FormData) {
     });
 
     revalidatePath('/');
-    redirect(
-        withToast('/dashboard', 'info', `Impersonating ${targetEmail}`),
-    );
+    redirect(withToast('/dashboard', 'info', `Impersonating ${targetEmail}`));
 }
 
 export async function endImpersonationAction() {
@@ -99,6 +97,7 @@ export async function endImpersonationAction() {
             {
                 actorAdminId: adminId,
                 targetUserId: prior.targetUserId as SorcUUID,
+                reason: 'user',
                 stream,
             } as never,
             { store: 'mongostore' as never, stream },
