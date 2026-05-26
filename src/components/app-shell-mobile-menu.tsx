@@ -45,6 +45,7 @@ export function AppShellMobileMenu({
                                     <Link
                                         href={`/tenants/${t.tenantId}`}
                                         className="w-full truncate"
+                                        title={t.displayName}
                                     />
                                 }
                             >

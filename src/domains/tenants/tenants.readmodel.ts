@@ -25,8 +25,11 @@ export type MembershipDoc = {
     userId?: SorcUUID;
     displayName?: string;
     joinedAt?: Date;
-    /** Populated after MemberRemoved — keeps the doc for audit. */
-    removedAt?: Date;
+    /**
+     * Populated after MemberRemoved — keeps the doc for audit. Epoch-ms
+     * (post-F.B.member-timestamps).
+     */
+    removedAt?: number;
 };
 
 export type MembershipsListenEvents = readonly [

@@ -128,7 +128,10 @@ export function AppShellCommandPalette({
                                             : 'hover:bg-accent/50'
                                     }`}
                                 >
-                                    <span className="truncate">
+                                    <span
+                                        className="truncate"
+                                        title={t.displayName}
+                                    >
                                         {t.displayName}
                                     </span>
                                     <span className="ml-2 shrink-0 font-mono text-xs text-muted-foreground">

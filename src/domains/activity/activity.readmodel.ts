@@ -181,7 +181,9 @@ export function activityApply(
                 tenantId: event.payload.tenantId,
                 actorUserId: event.payload.changedByUserId,
                 summary: `Role changed to ${event.payload.role}`,
-                occurredAt: event.payload.changedAt,
+                // Payload `changedAt` is epoch-ms (F.B.member-timestamps);
+                // ActivityDoc.occurredAt is a Date.
+                occurredAt: new Date(event.payload.changedAt),
                 streamRef,
             };
         case 'MemberRemoved':
@@ -192,7 +194,8 @@ export function activityApply(
                 tenantId: event.payload.tenantId,
                 actorUserId: event.payload.removedByUserId,
                 summary: 'Member removed',
-                occurredAt: event.payload.removedAt,
+                // Payload `removedAt` is epoch-ms (F.B.member-timestamps).
+                occurredAt: new Date(event.payload.removedAt),
                 streamRef,
             };
         case 'ImpersonationStarted':

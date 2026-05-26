@@ -38,7 +38,10 @@ export function AppShellTenantSelector({
                         className="gap-1.5"
                         aria-label="Switch tenant"
                     >
-                        <span className="max-w-[12rem] truncate md:max-w-[18rem] lg:max-w-[24rem]">
+                        <span
+                            className="max-w-[12rem] truncate md:max-w-[18rem] lg:max-w-[24rem]"
+                            title={label}
+                        >
                             {label}
                         </span>
                         <ChevronDownIcon className="size-4 opacity-60" />
@@ -58,7 +61,9 @@ export function AppShellTenantSelector({
                                 />
                             }
                         >
-                            <span className="truncate">{t.displayName}</span>
+                            <span className="truncate" title={t.displayName}>
+                                {t.displayName}
+                            </span>
                             {isActive ? (
                                 <CheckIcon className="size-4 opacity-80" />
                             ) : null}

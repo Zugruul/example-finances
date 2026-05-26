@@ -74,8 +74,14 @@ export class MemberRoleChangedPayload extends SorcPayload {
     @property({ type: 'uuid', required: true })
     changedByUserId!: SorcUUID;
 
-    @property({ type: 'date', required: true })
-    changedAt!: Date;
+    /**
+     * Epoch-ms stamped by the aggregate at command time. Use this for
+     * activity-feed ordering rather than the envelope `publishedAt` —
+     * the latter reflects storage-write time, which is non-deterministic
+     * relative to the user's intent.
+     */
+    @property({ type: 'number', required: true })
+    changedAt!: number;
 }
 
 @domain('tenants')
@@ -90,8 +96,14 @@ export class MemberRemovedPayload extends SorcPayload {
     @property({ type: 'uuid', required: true })
     removedByUserId!: SorcUUID;
 
-    @property({ type: 'date', required: true })
-    removedAt!: Date;
+    /**
+     * Epoch-ms stamped by the aggregate at command time. Use this for
+     * activity-feed ordering rather than the envelope `publishedAt` —
+     * the latter reflects storage-write time, which is non-deterministic
+     * relative to the user's intent.
+     */
+    @property({ type: 'number', required: true })
+    removedAt!: number;
 }
 
 // ----- events -----

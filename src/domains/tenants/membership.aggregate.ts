@@ -18,7 +18,8 @@ export type MembershipState = null | {
     userId?: SorcUUID;
     displayName?: string;
     acceptedAt?: Date;
-    removedAt?: Date;
+    /** Epoch-ms (post-F.B.member-timestamps). */
+    removedAt?: number;
 };
 
 export type MembershipEvent = InstanceType<
@@ -148,7 +149,7 @@ export const membershipCommands = {
                 membershipId: state.membershipId,
                 role: cmd.role,
                 changedByUserId: cmd.changedByUserId,
-                changedAt: new Date(),
+                changedAt: Date.now(),
             } as InstanceType<typeof MemberRoleChangedEvent>['payload'],
             { stream: cmd.stream },
         );
@@ -167,7 +168,7 @@ export const membershipCommands = {
                 tenantId: state.tenantId,
                 membershipId: state.membershipId,
                 removedByUserId: cmd.removedByUserId,
-                removedAt: new Date(),
+                removedAt: Date.now(),
             } as InstanceType<typeof MemberRemovedEvent>['payload'],
             { stream: cmd.stream },
         );
