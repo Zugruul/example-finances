@@ -7,6 +7,7 @@ import {
 } from '@/components/app-shell-tenant-selector';
 import { AppShellUserMenu } from '@/components/app-shell-user-menu';
 import { AppShellMobileMenu } from '@/components/app-shell-mobile-menu';
+import { AppShellCommandPalette } from '@/components/app-shell-command-palette';
 
 export async function AppShell() {
     const session = await auth();
@@ -86,6 +87,9 @@ export async function AppShell() {
 
             <AppShellMobileMenu tenants={tenants} showAdmin={isAdmin} />
             <AppShellUserMenu email={email} />
+            {tenants.length >= 2 ? (
+                <AppShellCommandPalette tenants={tenants} />
+            ) : null}
         </header>
     );
 }

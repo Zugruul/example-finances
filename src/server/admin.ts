@@ -19,6 +19,7 @@ import type {
 } from '@/domains/admin';
 import type { SorcUUID } from '@event-sorcerer/core';
 import { withToast } from '@/lib/toast-url';
+import { withActorContext } from '@/lib/actor-context';
 
 async function requireSessionToken(): Promise<string> {
     const cookieStore = await cookies();
@@ -47,42 +48,46 @@ function platformRoleStream(userId: string): PlatformRoleStreamInstance {
     return `platform-role-${userId}` as PlatformRoleStreamInstance;
 }
 
-export async function startImpersonationAction(formData: FormData) {
-    const session = await requireAdmin();
-    const adminId = session.user!.id as SorcUUID;
-    const targetUserId = String(formData.get('targetUserId') ?? '');
-    const targetEmail = String(formData.get('targetEmail') ?? '');
-    if (!targetUserId || !targetEmail) {
-        throw new Error('Target user id and email are required.');
-    }
+export const startImpersonationAction = withActorContext(
+    async (formData: FormData) => {
+        const session = await requireAdmin();
+        const adminId = session.user!.id as SorcUUID;
+        const targetUserId = String(formData.get('targetUserId') ?? '');
+        const targetEmail = String(formData.get('targetEmail') ?? '');
+        if (!targetUserId || !targetEmail) {
+            throw new Error('Target user id and email are required.');
+        }
 
-    const sessionToken = await requireSessionToken();
+        const sessionToken = await requireSessionToken();
 
-    const stream = adminStream(adminId);
-    await aggregates.adminActions.execute(
-        'startImpersonation',
-        {
+        const stream = adminStream(adminId);
+        await aggregates.adminActions.execute(
+            'startImpersonation',
+            {
+                actorAdminId: adminId,
+                targetUserId: targetUserId as SorcUUID,
+                targetEmail,
+                stream,
+            } as never,
+            { store: 'mongostore' as never, stream },
+        );
+
+        const client = await authMongoClientPromise;
+        await setImpersonationOnSession(client, sessionToken, {
             actorAdminId: adminId,
-            targetUserId: targetUserId as SorcUUID,
+            targetUserId,
             targetEmail,
-            stream,
-        } as never,
-        { store: 'mongostore' as never, stream },
-    );
+            startedAt: new Date().toISOString(),
+        });
 
-    const client = await authMongoClientPromise;
-    await setImpersonationOnSession(client, sessionToken, {
-        actorAdminId: adminId,
-        targetUserId,
-        targetEmail,
-        startedAt: new Date().toISOString(),
-    });
+        revalidatePath('/');
+        redirect(
+            withToast('/dashboard', 'info', `Impersonating ${targetEmail}`),
+        );
+    },
+);
 
-    revalidatePath('/');
-    redirect(withToast('/dashboard', 'info', `Impersonating ${targetEmail}`));
-}
-
-export async function endImpersonationAction() {
+export const endImpersonationAction = withActorContext(async () => {
     const session = await requireAdmin();
     const adminId = session.user!.id as SorcUUID;
 
@@ -106,9 +111,9 @@ export async function endImpersonationAction() {
 
     revalidatePath('/');
     redirect(withToast('/admin', 'success', 'Impersonation ended'));
-}
+});
 
-export async function grantAdminAction(formData: FormData) {
+export const grantAdminAction = withActorContext(async (formData: FormData) => {
     const session = await requireAdmin();
     const adminId = session.user!.id as SorcUUID;
     const targetUserId = String(formData.get('targetUserId') ?? '');
@@ -135,44 +140,48 @@ export async function grantAdminAction(formData: FormData) {
 
     revalidatePath('/admin/users');
     redirect(withToast('/admin/users', 'success', 'Admin granted'));
-}
+});
 
-export async function removeAdminAction(formData: FormData) {
-    const session = await requireAdmin();
-    const adminId = session.user!.id as SorcUUID;
-    const targetUserId = String(formData.get('targetUserId') ?? '');
-    if (!targetUserId) {
-        throw new Error('Target user id is required.');
-    }
-    const reasonRaw = formData.get('reason');
-    const reason =
-        typeof reasonRaw === 'string' && reasonRaw.length > 0
-            ? reasonRaw
-            : undefined;
-
-    // Anti-self-lockout: if the admin is removing themselves AND they're the
-    // only remaining platform admin, refuse. Allows another admin to remove
-    // them, and allows them to remove someone else even if multiple admins
-    // exist.
-    if (targetUserId === adminId) {
-        const admins = await readModels.platformRoles.find({ role: 'admin' });
-        if (admins.length <= 1) {
-            throw new Error('Cannot remove the last platform admin.');
+export const removeAdminAction = withActorContext(
+    async (formData: FormData) => {
+        const session = await requireAdmin();
+        const adminId = session.user!.id as SorcUUID;
+        const targetUserId = String(formData.get('targetUserId') ?? '');
+        if (!targetUserId) {
+            throw new Error('Target user id is required.');
         }
-    }
+        const reasonRaw = formData.get('reason');
+        const reason =
+            typeof reasonRaw === 'string' && reasonRaw.length > 0
+                ? reasonRaw
+                : undefined;
 
-    const stream = platformRoleStream(targetUserId);
-    await aggregates.platformRole.execute(
-        'removeAdmin',
-        {
-            targetUserId: targetUserId as SorcUUID,
-            removedByUserId: adminId,
-            reason,
-            stream,
-        } as never,
-        { store: 'mongostore' as never, stream },
-    );
+        // Anti-self-lockout: if the admin is removing themselves AND they're the
+        // only remaining platform admin, refuse. Allows another admin to remove
+        // them, and allows them to remove someone else even if multiple admins
+        // exist.
+        if (targetUserId === adminId) {
+            const admins = await readModels.platformRoles.find({
+                role: 'admin',
+            });
+            if (admins.length <= 1) {
+                throw new Error('Cannot remove the last platform admin.');
+            }
+        }
 
-    revalidatePath('/admin/users');
-    redirect(withToast('/admin/users', 'success', 'Admin removed'));
-}
+        const stream = platformRoleStream(targetUserId);
+        await aggregates.platformRole.execute(
+            'removeAdmin',
+            {
+                targetUserId: targetUserId as SorcUUID,
+                removedByUserId: adminId,
+                reason,
+                stream,
+            } as never,
+            { store: 'mongostore' as never, stream },
+        );
+
+        revalidatePath('/admin/users');
+        redirect(withToast('/admin/users', 'success', 'Admin removed'));
+    },
+);

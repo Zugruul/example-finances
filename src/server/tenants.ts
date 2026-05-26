@@ -12,6 +12,7 @@ import type {
 } from '@/domains/tenants';
 import type { SorcUUID } from '@event-sorcerer/core';
 import { withToast } from '@/lib/toast-url';
+import { withActorContext } from '@/lib/actor-context';
 
 // ----- helpers -----
 
@@ -47,203 +48,205 @@ function membershipStream(
 
 // ----- actions -----
 
-export async function createTenantAction(formData: FormData) {
-    const session = await requireSession();
-    const userId = session.user!.id as SorcUUID;
-    const displayName = String(formData.get('displayName') ?? '').trim();
-    const description =
-        String(formData.get('description') ?? '').trim() || undefined;
+export const createTenantAction = withActorContext(
+    async (formData: FormData) => {
+        const session = await requireSession();
+        const userId = session.user!.id as SorcUUID;
+        const displayName = String(formData.get('displayName') ?? '').trim();
+        const description =
+            String(formData.get('description') ?? '').trim() || undefined;
 
-    if (!displayName) throw new Error('Display name is required.');
+        if (!displayName) throw new Error('Display name is required.');
 
-    const tenantId = uuidv7() as SorcUUID;
-    const membershipId = uuidv7() as SorcUUID;
+        const tenantId = uuidv7() as SorcUUID;
+        const membershipId = uuidv7() as SorcUUID;
 
-    const tStream = tenantStream(tenantId);
-    const mStream = membershipStream(tenantId, membershipId);
+        const tStream = tenantStream(tenantId);
+        const mStream = membershipStream(tenantId, membershipId);
 
-    // 1) Create the tenant.
-    await aggregates.tenant.execute(
-        'createTenant',
-        {
-            tenantId,
-            displayName,
-            description,
-            createdByUserId: userId,
-            stream: tStream,
-        } as never,
-        { store: 'mongostore' as never, stream: tStream },
-    );
+        // 1) Create the tenant.
+        await aggregates.tenant.execute(
+            'createTenant',
+            {
+                tenantId,
+                displayName,
+                description,
+                createdByUserId: userId,
+                stream: tStream,
+            } as never,
+            { store: 'mongostore' as never, stream: tStream },
+        );
 
-    // 2) Invite the creator with role 'owner' (auto-accept below).
-    await aggregates.membership.execute(
-        'inviteMember',
-        {
-            tenantId,
-            membershipId,
-            invitedEmail: session.user!.email ?? '',
-            role: 'owner',
-            invitedByUserId: userId,
-            stream: mStream,
-        } as never,
-        { store: 'mongostore' as never, stream: mStream },
-    );
+        // 2) Invite the creator with role 'owner' (auto-accept below).
+        await aggregates.membership.execute(
+            'inviteMember',
+            {
+                tenantId,
+                membershipId,
+                invitedEmail: session.user!.email ?? '',
+                role: 'owner',
+                invitedByUserId: userId,
+                stream: mStream,
+            } as never,
+            { store: 'mongostore' as never, stream: mStream },
+        );
 
-    // 3) Accept the invitation immediately.
-    await aggregates.membership.execute(
-        'acceptInvite',
-        {
-            userId,
-            displayName: session.user!.name ?? session.user!.email ?? 'Owner',
-            stream: mStream,
-        } as never,
-        { store: 'mongostore' as never, stream: mStream },
-    );
+        // 3) Accept the invitation immediately.
+        await aggregates.membership.execute(
+            'acceptInvite',
+            {
+                userId,
+                displayName:
+                    session.user!.name ?? session.user!.email ?? 'Owner',
+                stream: mStream,
+            } as never,
+            { store: 'mongostore' as never, stream: mStream },
+        );
 
-    revalidatePath('/tenants');
-    redirect(
-        withToast(
-            `/tenants/${tenantId}`,
-            'success',
-            `Tenant "${displayName}" created`,
-        ),
-    );
-}
+        revalidatePath('/tenants');
+        redirect(
+            withToast(
+                `/tenants/${tenantId}`,
+                'success',
+                `Tenant "${displayName}" created`,
+            ),
+        );
+    },
+);
 
-export async function renameTenantAction(
-    tenantId: string,
-    formData: FormData,
-) {
-    const session = await requireSession();
-    const userId = session.user!.id as SorcUUID;
-    await requireRole(tenantId, userId, ['owner', 'admin']);
+export const renameTenantAction = withActorContext(
+    async (tenantId: string, formData: FormData) => {
+        const session = await requireSession();
+        const userId = session.user!.id as SorcUUID;
+        await requireRole(tenantId, userId, ['owner', 'admin']);
 
-    const displayName = String(formData.get('displayName') ?? '').trim();
-    if (!displayName) throw new Error('Display name is required.');
+        const displayName = String(formData.get('displayName') ?? '').trim();
+        if (!displayName) throw new Error('Display name is required.');
 
-    const tStream = tenantStream(tenantId);
-    await aggregates.tenant.execute(
-        'renameTenant',
-        {
-            displayName,
-            renamedByUserId: userId,
-            stream: tStream,
-        } as never,
-        { store: 'mongostore' as never, stream: tStream },
-    );
+        const tStream = tenantStream(tenantId);
+        await aggregates.tenant.execute(
+            'renameTenant',
+            {
+                displayName,
+                renamedByUserId: userId,
+                stream: tStream,
+            } as never,
+            { store: 'mongostore' as never, stream: tStream },
+        );
 
-    revalidatePath(`/tenants/${tenantId}`);
-    redirect(
-        withToast(`/tenants/${tenantId}`, 'success', 'Tenant renamed'),
-    );
-}
+        revalidatePath(`/tenants/${tenantId}`);
+        redirect(
+            withToast(`/tenants/${tenantId}`, 'success', 'Tenant renamed'),
+        );
+    },
+);
 
-export async function inviteMemberAction(
-    tenantId: string,
-    formData: FormData,
-) {
-    const session = await requireSession();
-    const userId = session.user!.id as SorcUUID;
-    await requireRole(tenantId, userId, ['owner', 'admin']);
+export const inviteMemberAction = withActorContext(
+    async (tenantId: string, formData: FormData) => {
+        const session = await requireSession();
+        const userId = session.user!.id as SorcUUID;
+        await requireRole(tenantId, userId, ['owner', 'admin']);
 
-    const invitedEmail = String(formData.get('email') ?? '')
-        .trim()
-        .toLowerCase();
-    const role = String(formData.get('role') ?? 'member') as MembershipRole;
-    if (!invitedEmail) throw new Error('Email is required.');
+        const invitedEmail = String(formData.get('email') ?? '')
+            .trim()
+            .toLowerCase();
+        const role = String(formData.get('role') ?? 'member') as MembershipRole;
+        if (!invitedEmail) throw new Error('Email is required.');
 
-    const membershipId = uuidv7() as SorcUUID;
-    const mStream = membershipStream(tenantId, membershipId);
-    await aggregates.membership.execute(
-        'inviteMember',
-        {
-            tenantId: tenantId as SorcUUID,
-            membershipId,
-            invitedEmail,
-            role,
-            invitedByUserId: userId,
-            stream: mStream,
-        } as never,
-        { store: 'mongostore' as never, stream: mStream },
-    );
+        const membershipId = uuidv7() as SorcUUID;
+        const mStream = membershipStream(tenantId, membershipId);
+        await aggregates.membership.execute(
+            'inviteMember',
+            {
+                tenantId: tenantId as SorcUUID,
+                membershipId,
+                invitedEmail,
+                role,
+                invitedByUserId: userId,
+                stream: mStream,
+            } as never,
+            { store: 'mongostore' as never, stream: mStream },
+        );
 
-    revalidatePath(`/tenants/${tenantId}/members`);
-    redirect(
-        withToast(
-            `/tenants/${tenantId}/members`,
-            'success',
-            `Invited ${invitedEmail}`,
-        ),
-    );
-}
+        revalidatePath(`/tenants/${tenantId}/members`);
+        redirect(
+            withToast(
+                `/tenants/${tenantId}/members`,
+                'success',
+                `Invited ${invitedEmail}`,
+            ),
+        );
+    },
+);
 
-export async function changeMemberRoleByFormAction(formData: FormData) {
-    const tenantId = String(formData.get('tenantId') ?? '');
-    const membershipId = String(formData.get('membershipId') ?? '');
-    const role = String(formData.get('role') ?? 'member') as MembershipRole;
-    return changeMemberRoleAction(tenantId, membershipId, role);
-}
+export const changeMemberRoleByFormAction = withActorContext(
+    async (formData: FormData) => {
+        const tenantId = String(formData.get('tenantId') ?? '');
+        const membershipId = String(formData.get('membershipId') ?? '');
+        const role = String(formData.get('role') ?? 'member') as MembershipRole;
+        return changeMemberRoleAction(tenantId, membershipId, role);
+    },
+);
 
-export async function removeMemberByFormAction(formData: FormData) {
-    const tenantId = String(formData.get('tenantId') ?? '');
-    const membershipId = String(formData.get('membershipId') ?? '');
-    return removeMemberAction(tenantId, membershipId);
-}
+export const removeMemberByFormAction = withActorContext(
+    async (formData: FormData) => {
+        const tenantId = String(formData.get('tenantId') ?? '');
+        const membershipId = String(formData.get('membershipId') ?? '');
+        return removeMemberAction(tenantId, membershipId);
+    },
+);
 
-export async function changeMemberRoleAction(
-    tenantId: string,
-    membershipId: string,
-    role: MembershipRole,
-) {
-    const session = await requireSession();
-    const userId = session.user!.id as SorcUUID;
-    await requireRole(tenantId, userId, ['owner', 'admin']);
+export const changeMemberRoleAction = withActorContext(
+    async (tenantId: string, membershipId: string, role: MembershipRole) => {
+        const session = await requireSession();
+        const userId = session.user!.id as SorcUUID;
+        await requireRole(tenantId, userId, ['owner', 'admin']);
 
-    const mStream = membershipStream(tenantId, membershipId);
-    await aggregates.membership.execute(
-        'changeRole',
-        {
-            role,
-            changedByUserId: userId,
-            stream: mStream,
-        } as never,
-        { store: 'mongostore' as never, stream: mStream },
-    );
+        const mStream = membershipStream(tenantId, membershipId);
+        await aggregates.membership.execute(
+            'changeRole',
+            {
+                role,
+                changedByUserId: userId,
+                stream: mStream,
+            } as never,
+            { store: 'mongostore' as never, stream: mStream },
+        );
 
-    revalidatePath(`/tenants/${tenantId}/members`);
-    redirect(
-        withToast(
-            `/tenants/${tenantId}/members`,
-            'success',
-            `Role updated to ${role}`,
-        ),
-    );
-}
+        revalidatePath(`/tenants/${tenantId}/members`);
+        redirect(
+            withToast(
+                `/tenants/${tenantId}/members`,
+                'success',
+                `Role updated to ${role}`,
+            ),
+        );
+    },
+);
 
-export async function removeMemberAction(
-    tenantId: string,
-    membershipId: string,
-) {
-    const session = await requireSession();
-    const userId = session.user!.id as SorcUUID;
-    await requireRole(tenantId, userId, ['owner', 'admin']);
+export const removeMemberAction = withActorContext(
+    async (tenantId: string, membershipId: string) => {
+        const session = await requireSession();
+        const userId = session.user!.id as SorcUUID;
+        await requireRole(tenantId, userId, ['owner', 'admin']);
 
-    const mStream = membershipStream(tenantId, membershipId);
-    await aggregates.membership.execute(
-        'removeMember',
-        {
-            removedByUserId: userId,
-            stream: mStream,
-        } as never,
-        { store: 'mongostore' as never, stream: mStream },
-    );
+        const mStream = membershipStream(tenantId, membershipId);
+        await aggregates.membership.execute(
+            'removeMember',
+            {
+                removedByUserId: userId,
+                stream: mStream,
+            } as never,
+            { store: 'mongostore' as never, stream: mStream },
+        );
 
-    revalidatePath(`/tenants/${tenantId}/members`);
-    redirect(
-        withToast(
-            `/tenants/${tenantId}/members`,
-            'success',
-            'Member removed',
-        ),
-    );
-}
+        revalidatePath(`/tenants/${tenantId}/members`);
+        redirect(
+            withToast(
+                `/tenants/${tenantId}/members`,
+                'success',
+                'Member removed',
+            ),
+        );
+    },
+);

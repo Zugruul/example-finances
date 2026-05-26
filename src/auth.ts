@@ -9,7 +9,7 @@ import type {
     PlatformRoleStreamInstance,
 } from '@/domains/admin';
 import type { UserStreamInstance } from '@/domains/users';
-import type { SorcUUID } from '@event-sorcerer/core';
+import { requestContext, type SorcUUID } from '@event-sorcerer/core';
 import {
     type ImpersonationState,
     isImpersonationExpired,
@@ -126,18 +126,36 @@ export const authConfig: NextAuthConfig = {
                                     const adminId =
                                         expired.actorAdminId as SorcUUID;
                                     const stream = adminActionsStream(adminId);
-                                    await aggregates.adminActions.execute(
-                                        'endImpersonation',
+                                    // Stamp the synthetic Ended event
+                                    // with the same dual-actor metadata
+                                    // a manual end would have carried:
+                                    // actor = impersonated target,
+                                    // onBehalfOf = the real admin. Mirrors
+                                    // the wrapping that withActorContext
+                                    // applies to server actions, just
+                                    // here we bind the ALS directly since
+                                    // this runs in the session callback,
+                                    // not a server-action handler.
+                                    await requestContext.run(
                                         {
-                                            actorAdminId: adminId,
-                                            targetUserId:
-                                                expired.targetUserId as SorcUUID,
-                                            reason: 'expired',
-                                            stream,
-                                        } as never,
-                                        {
-                                            store: 'mongostore' as never,
-                                            stream,
+                                            actor: expired.targetUserId,
+                                            onBehalfOf: expired.actorAdminId,
+                                        },
+                                        async () => {
+                                            await aggregates.adminActions.execute(
+                                                'endImpersonation',
+                                                {
+                                                    actorAdminId: adminId,
+                                                    targetUserId:
+                                                        expired.targetUserId as SorcUUID,
+                                                    reason: 'expired',
+                                                    stream,
+                                                } as never,
+                                                {
+                                                    store: 'mongostore' as never,
+                                                    stream,
+                                                },
+                                            );
                                         },
                                     );
                                 }
@@ -176,6 +194,11 @@ export const authConfig: NextAuthConfig = {
             // record) on FIRST sign-in for this user-id. Idempotent: the
             // aggregate's `createUser` throws if the stream already has
             // state, and we short-circuit via the read model first.
+            //
+            // Run inside requestContext.run so the actorContextPlugin
+            // stamps the user as the actor on the emitted UserCreated.
+            // No impersonation possible at this point — the user is
+            // literally authenticating themselves.
             try {
                 const targetUserId = user.id as SorcUUID;
                 const existingUser = await readModels.usersById.findOne({
@@ -183,14 +206,19 @@ export const authConfig: NextAuthConfig = {
                 });
                 if (!existingUser) {
                     const stream = userStream(targetUserId);
-                    await aggregates.users.execute(
-                        'createUser',
-                        {
-                            userId: targetUserId,
-                            email: user.email ?? '',
-                            stream,
-                        } as never,
-                        { store: 'mongostore' as never, stream },
+                    await requestContext.run(
+                        { actor: targetUserId },
+                        async () => {
+                            await aggregates.users.execute(
+                                'createUser',
+                                {
+                                    userId: targetUserId,
+                                    email: user.email ?? '',
+                                    stream,
+                                } as never,
+                                { store: 'mongostore' as never, stream },
+                            );
+                        },
                     );
                 }
             } catch (err) {
@@ -205,16 +233,22 @@ export const authConfig: NextAuthConfig = {
 
                 const targetUserId = user.id as SorcUUID;
                 const stream = platformRoleStream(targetUserId);
-                await aggregates.platformRole.execute(
-                    'grantAdmin',
-                    {
-                        targetUserId,
-                        grantedByUserId: 'system' as SorcUUID,
-                        reason: 'First user (auto-bootstrap)',
-                        stream,
-                    } as never,
-                    { store: 'mongostore' as never, stream },
-                );
+                // First-user bootstrap: the user grants themselves
+                // admin via the synthetic `'system'` actor on the
+                // command, but the envelope actor is the user — there
+                // is no separate admin at this point.
+                await requestContext.run({ actor: targetUserId }, async () => {
+                    await aggregates.platformRole.execute(
+                        'grantAdmin',
+                        {
+                            targetUserId,
+                            grantedByUserId: 'system' as SorcUUID,
+                            reason: 'First user (auto-bootstrap)',
+                            stream,
+                        } as never,
+                        { store: 'mongostore' as never, stream },
+                    );
+                });
                 console.info(
                     `[auth] First user ${user.email ?? user.id} auto-granted admin (bootstrap).`,
                 );

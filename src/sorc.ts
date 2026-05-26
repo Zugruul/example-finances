@@ -7,6 +7,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
     Sorc,
+    actorContextPlugin,
     type ISorcEvent,
     type DefaultISorcEvent,
 } from '@event-sorcerer/core';
@@ -78,14 +79,8 @@ import {
     activityListen,
     type ActivityDoc,
 } from '@/domains/activity';
-import {
-    userEvents,
-    type UserStreamPattern,
-} from '@/domains/users';
-import {
-    userReducer,
-    userCommands,
-} from '@/domains/users/user.aggregate';
+import { userEvents, type UserStreamPattern } from '@/domains/users';
+import { userReducer, userCommands } from '@/domains/users/user.aggregate';
 import {
     usersByIdApply,
     usersByIdKey,
@@ -105,9 +100,7 @@ type FinancesSorcCache = {
 const READMODEL_DB_NAME = 'finances_readmodels';
 
 function buildSorc(metrics: ReturnType<typeof metricsPrometheus>) {
-    type AnyEventClass = new (
-        ...args: any[]
-    ) => ISorcEvent<DefaultISorcEvent>;
+    type AnyEventClass = new (...args: any[]) => ISorcEvent<DefaultISorcEvent>;
 
     // The example reuses the framework's MongoDB replica set. URI defaults
     // to localhost:27020-22 from `pnpm infra:up`. Override with
@@ -138,6 +131,13 @@ function buildSorc(metrics: ReturnType<typeof metricsPrometheus>) {
         // store used by every aggregate below.
         .setupStore(memorystore)
         .setupStore(mongostore as never)
+        // Register actorContextPlugin BEFORE cryptoshredding so that
+        // downstream beforeStorage hooks (including cs) observe the
+        // already-stamped `actor` / `onBehalfOf` envelope metadata.
+        // Reads from the per-request AsyncLocalStorage bound by
+        // `withActorContext()` in `src/lib/actor-context.ts`; passthrough
+        // outside a `requestContext.run()` scope.
+        .plugin('actorContext', actorContextPlugin)
         .plugin(
             'cs',
             cryptoshredding({
@@ -239,38 +239,33 @@ function buildReadModels(
     sorc: ReturnType<typeof buildSorc>['sorc'],
     client: MongoClient,
 ) {
-    const tenants = new SorcReadModel<TenantDoc, any, any, typeof sorc>(
+    const tenants = new SorcReadModel<TenantDoc, any, any, typeof sorc>(sorc, {
+        name: 'tenants',
+        storeName: 'mongostore',
+        events: tenantsListen as never,
+        store: makeStore<TenantDoc>(client, 'rm-tenants', [
+            { key: { tenantId: 1 }, options: { unique: true } },
+        ]),
+        key: tenantsKey as never,
+        apply: tenantsApply as never,
+    });
+
+    const memberships = new SorcReadModel<MembershipDoc, any, any, typeof sorc>(
         sorc,
         {
-            name: 'tenants',
+            name: 'memberships',
             storeName: 'mongostore',
-            events: tenantsListen as never,
-            store: makeStore<TenantDoc>(client, 'rm-tenants', [
-                { key: { tenantId: 1 }, options: { unique: true } },
+            events: membershipsListen as never,
+            store: makeStore<MembershipDoc>(client, 'rm-memberships', [
+                { key: { membershipId: 1 }, options: { unique: true } },
+                { key: { tenantId: 1 } },
+                { key: { userId: 1 } },
+                { key: { invitedEmail: 1 } },
             ]),
-            key: tenantsKey as never,
-            apply: tenantsApply as never,
+            key: membershipsKey as never,
+            apply: membershipsApply as never,
         },
     );
-
-    const memberships = new SorcReadModel<
-        MembershipDoc,
-        any,
-        any,
-        typeof sorc
-    >(sorc, {
-        name: 'memberships',
-        storeName: 'mongostore',
-        events: membershipsListen as never,
-        store: makeStore<MembershipDoc>(client, 'rm-memberships', [
-            { key: { membershipId: 1 }, options: { unique: true } },
-            { key: { tenantId: 1 } },
-            { key: { userId: 1 } },
-            { key: { invitedEmail: 1 } },
-        ]),
-        key: membershipsKey as never,
-        apply: membershipsApply as never,
-    });
 
     const adminActivity = new SorcReadModel<
         AdminActivityDoc,

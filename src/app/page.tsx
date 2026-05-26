@@ -1,7 +1,14 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { auth } from '@/auth';
 import { Button } from '@/components/ui/button';
 
-export default function Home() {
+export default async function Home() {
+    // Signed-in users skip the landing splash — bounce straight to the
+    // dashboard. Unauthenticated visitors see the marketing page below.
+    const session = await auth();
+    if (session?.user?.id) redirect('/dashboard');
+
     return (
         <main className="flex min-h-screen flex-col items-center justify-center gap-8 p-8">
             <div className="flex flex-col items-center gap-3 text-center">
