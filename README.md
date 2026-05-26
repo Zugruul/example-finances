@@ -42,6 +42,71 @@ Visit `http://localhost:3000` → sign in with GitHub or Google → land on `/da
 | `FINANCES_MONGO_URI` | Override for the event-store Mongo URI. Falls back to `AUTH_MONGO_URI`, then to the local replica set. | optional |
 | `PROM_METRICS_TOKEN` | Bearer for `/api/metrics`. Endpoint returns `503 not configured` if unset. | required to expose metrics |
 
+## Running with Docker
+
+The app ships a multi-stage `Dockerfile` so you can run a deployment-shaped smoke test without installing Node/pnpm locally. The image is wired into the monorepo's `docker-compose.yaml` as the `example-finances` service, on the same `mongo-cluster` network as the Mongo replica set, Prometheus, Grafana, etc.
+
+```bash
+# From the monorepo root — first build is ~3 min (downloads node:22-alpine,
+# pulls 1100+ workspace deps, runs tsc -b for the framework packages, then
+# next build with output:'standalone'). Subsequent builds are layer-cached.
+docker compose build example-finances
+
+# `up -d` brings the whole stack (Mongo + observability + the app) online.
+docker compose up -d
+
+# Or just the app + its Mongo deps:
+docker compose up -d example-finances
+
+# Tail the app's logs
+docker compose logs -f example-finances
+
+# Hit it
+curl -fsS http://localhost:3000/                        # landing page
+curl -fsS http://localhost:3000/api/auth/providers      # Auth.js providers JSON
+curl -fsS -H "Authorization: Bearer $PROM_METRICS_TOKEN" \
+     http://localhost:3000/api/metrics                  # Prometheus scrape
+```
+
+After code changes, rebuild the image:
+
+```bash
+docker compose build example-finances && docker compose up -d example-finances
+```
+
+### How the build works
+
+The `Dockerfile` lives at `examples/example-finances/Dockerfile` but its **build context is the monorepo root** — that's what lets pnpm resolve `workspace:*` dependencies into the framework packages. The build:
+
+1. `pnpm install --frozen-lockfile` over the full workspace (we don't `--filter=example-finances...` because that mode skips devDependencies of transitive workspace deps, and the framework packages need their own `typescript@5.x` to build).
+2. `tsc --build tsconfig.build.json` to emit `dist/` for every framework package the example imports.
+3. `pnpm build` (Next.js) in the example, which produces `.next/standalone/` — a self-contained server tree.
+4. The runner stage carries **only** `.next/standalone` + `public/`. The fat workspace `node_modules` is left behind.
+
+### env_file + Mongo hostname override
+
+The compose service uses `env_file: ./.env.local` to pass OAuth credentials, `AUTH_SECRET`, and `PROM_METRICS_TOKEN` into the container at runtime. The `.env.local` is gitignored, so secrets never enter the image.
+
+The Mongo URIs in `.env.local` point at `localhost:27020-22` for `pnpm dev`. Inside the docker network the app reaches the replica set via container hostnames, so the compose `environment:` block **overrides** them:
+
+```yaml
+AUTH_MONGO_URI: "mongodb://admin:password@mongo1:27020,mongo2:27021,mongo3:27022/?authSource=admin&replicaSet=rs0"
+FINANCES_MONGO_URI: "mongodb://admin:password@mongo1:27020,mongo2:27021,mongo3:27022/?authSource=admin&replicaSet=rs0"
+```
+
+Note the internal ports are still `27020/27021/27022` (not the conventional `27017`) — each mongo service's `command` passes `--port 27020` etc., so mongod binds those ports inside the container too. `AUTH_URL=http://localhost:3000` and `AUTH_TRUST_HOST=true` are also set so Auth.js v5 accepts requests in `NODE_ENV=production` mode.
+
+### When to use Docker vs `pnpm dev`
+
+| Goal | Use |
+|---|---|
+| Iterate on the app — fast HMR, source maps, easy debugging | `pnpm dev` |
+| Smoke-test the app in a deployment-shaped environment | `docker compose up -d example-finances` |
+| Run the app without installing Node/pnpm locally | Docker |
+| Sanity-check workspace dep resolution against a clean install | Docker (re-runs `pnpm install` from the lockfile) |
+
+`pnpm dev` is strictly faster for development. Docker is for verifying the prod path works end-to-end.
+
 ## Directory layout
 
 ```

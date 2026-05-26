@@ -13,6 +13,9 @@ const staticSecurityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+    // Emits .next/standalone with a self-contained server.js + minimal node_modules.
+    // Required by examples/example-finances/Dockerfile's runner stage.
+    output: 'standalone',
     async headers() {
         return [
             {
