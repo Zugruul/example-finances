@@ -7,6 +7,7 @@ import { aggregates, readModels } from '@/sorc';
 import type {
     PlatformRoleStreamInstance,
 } from '@/domains/admin';
+import type { UserStreamInstance } from '@/domains/users';
 import type { SorcUUID } from '@event-sorcerer/core';
 import type { ImpersonationState } from '@/lib/impersonation';
 
@@ -35,6 +36,10 @@ if (!isProd) {
 
 function platformRoleStream(userId: string): PlatformRoleStreamInstance {
     return `platform-role-${userId}` as PlatformRoleStreamInstance;
+}
+
+function userStream(userId: string): UserStreamInstance {
+    return `user-${userId}` as UserStreamInstance;
 }
 
 export const authConfig: NextAuthConfig = {
@@ -102,7 +107,34 @@ export const authConfig: NextAuthConfig = {
             // concurrency guard handles double-fire racing across two
             // simultaneous first sign-ins (the second emit would target a
             // non-empty stream → no-op via the idempotency guard).
-            if (!isNewUser || !user.id) return;
+            if (!user.id) return;
+
+            // Bootstrap per-app user profile (separate from Auth.js user
+            // record) on FIRST sign-in for this user-id. Idempotent: the
+            // aggregate's `createUser` throws if the stream already has
+            // state, and we short-circuit via the read model first.
+            try {
+                const targetUserId = user.id as SorcUUID;
+                const existingUser = await readModels.usersById.findOne({
+                    userId: targetUserId,
+                });
+                if (!existingUser) {
+                    const stream = userStream(targetUserId);
+                    await aggregates.users.execute(
+                        'createUser',
+                        {
+                            userId: targetUserId,
+                            email: user.email ?? '',
+                            stream,
+                        } as never,
+                        { store: 'mongostore' as never, stream },
+                    );
+                }
+            } catch (err) {
+                console.error('[auth] user-profile bootstrap failed', err);
+            }
+
+            if (!isNewUser) return;
 
             try {
                 const existing = await readModels.platformRoles.find({});

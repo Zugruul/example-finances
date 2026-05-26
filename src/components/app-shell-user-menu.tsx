@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { UserIcon } from 'lucide-react';
 import {
     DropdownMenu,
@@ -32,6 +33,10 @@ export function AppShellUserMenu({ email }: { email: string }) {
                 <DropdownMenuLabel className="truncate text-muted-foreground">
                     {email}
                 </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem render={<Link href="/profile" />}>
+                    Profile
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <form action={signOutAction}>
                     <DropdownMenuItem

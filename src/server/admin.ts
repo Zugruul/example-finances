@@ -18,6 +18,7 @@ import type {
     PlatformRoleStreamInstance,
 } from '@/domains/admin';
 import type { SorcUUID } from '@event-sorcerer/core';
+import { withToast } from '@/lib/toast-url';
 
 async function requireSessionToken(): Promise<string> {
     const cookieStore = await cookies();
@@ -78,7 +79,9 @@ export async function startImpersonationAction(formData: FormData) {
     });
 
     revalidatePath('/');
-    redirect('/dashboard');
+    redirect(
+        withToast('/dashboard', 'info', `Impersonating ${targetEmail}`),
+    );
 }
 
 export async function endImpersonationAction() {
@@ -103,7 +106,7 @@ export async function endImpersonationAction() {
     }
 
     revalidatePath('/');
-    redirect('/admin');
+    redirect(withToast('/admin', 'success', 'Impersonation ended'));
 }
 
 export async function grantAdminAction(formData: FormData) {
@@ -132,6 +135,7 @@ export async function grantAdminAction(formData: FormData) {
     );
 
     revalidatePath('/admin/users');
+    redirect(withToast('/admin/users', 'success', 'Admin granted'));
 }
 
 export async function removeAdminAction(formData: FormData) {
@@ -171,4 +175,5 @@ export async function removeAdminAction(formData: FormData) {
     );
 
     revalidatePath('/admin/users');
+    redirect(withToast('/admin/users', 'success', 'Admin removed'));
 }

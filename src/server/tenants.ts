@@ -211,6 +211,13 @@ export async function changeMemberRoleAction(
     );
 
     revalidatePath(`/tenants/${tenantId}/members`);
+    redirect(
+        withToast(
+            `/tenants/${tenantId}/members`,
+            'success',
+            `Role updated to ${role}`,
+        ),
+    );
 }
 
 export async function removeMemberAction(
@@ -232,4 +239,11 @@ export async function removeMemberAction(
     );
 
     revalidatePath(`/tenants/${tenantId}/members`);
+    redirect(
+        withToast(
+            `/tenants/${tenantId}/members`,
+            'success',
+            'Member removed',
+        ),
+    );
 }

@@ -77,6 +77,20 @@ import {
     activityListen,
     type ActivityDoc,
 } from '@/domains/activity';
+import {
+    userEvents,
+    type UserStreamPattern,
+} from '@/domains/users';
+import {
+    userReducer,
+    userCommands,
+} from '@/domains/users/user.aggregate';
+import {
+    usersByIdApply,
+    usersByIdKey,
+    usersByIdListen,
+    type UserByIdDoc,
+} from '@/domains/users/users-by-id.readmodel';
 
 // ----- HMR-safe singleton bootstrap -----
 
@@ -135,7 +149,8 @@ function buildSorc(metrics: ReturnType<typeof metricsPrometheus>) {
         .plugin('metrics', metrics)
         .setupEvent([...tenantEvents] as unknown as AnyEventClass[])
         .setupEvent([...membershipEvents] as unknown as AnyEventClass[])
-        .setupEvent([...adminEvents] as unknown as AnyEventClass[]);
+        .setupEvent([...adminEvents] as unknown as AnyEventClass[])
+        .setupEvent([...userEvents] as unknown as AnyEventClass[]);
 
     const aggregates = {
         tenant: sorc.aggregate({
@@ -185,6 +200,18 @@ function buildSorc(metrics: ReturnType<typeof metricsPrometheus>) {
             initial: null as ReturnType<typeof platformRoleReducer>,
             reducer: platformRoleReducer as never,
             commands: platformRoleCommands as never,
+        }),
+        users: sorc.aggregate({
+            name: 'User',
+            streams: ['user-*' as UserStreamPattern],
+            events: [
+                { name: 'UserCreated', version: '*' },
+                { name: 'UserProfileUpdated', version: '*' },
+                { name: 'UserDeleted', version: '*' },
+            ],
+            initial: null as ReturnType<typeof userReducer>,
+            reducer: userReducer as never,
+            commands: userCommands as never,
         }),
     };
 
@@ -258,7 +285,26 @@ function buildReadModels(sorc: ReturnType<typeof buildSorc>['sorc']) {
         },
     );
 
-    return { tenants, memberships, adminActivity, platformRoles, activity };
+    const usersById = new SorcReadModel<UserByIdDoc, any, any, typeof sorc>(
+        sorc,
+        {
+            name: 'users-by-id',
+            storeName: 'mongostore',
+            events: usersByIdListen as never,
+            store: new MemoryReadModelStore<UserByIdDoc>(),
+            key: usersByIdKey as never,
+            apply: usersByIdApply as never,
+        },
+    );
+
+    return {
+        tenants,
+        memberships,
+        adminActivity,
+        platformRoles,
+        activity,
+        usersById,
+    };
 }
 
 const globalForSorc = globalThis as unknown as {
@@ -281,6 +327,7 @@ if (!cache) {
     void readModels.adminActivity.subscribe();
     void readModels.platformRoles.subscribe();
     void readModels.activity.subscribe();
+    void readModels.usersById.subscribe();
 
     cache = { bundle, metrics, readModels };
     if (process.env.NODE_ENV !== 'production') {
