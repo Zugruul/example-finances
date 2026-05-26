@@ -71,6 +71,12 @@ import {
     platformRolesListen,
     type PlatformRoleDoc,
 } from '@/domains/admin/platform-roles.readmodel';
+import {
+    activityApply,
+    activityKey,
+    activityListen,
+    type ActivityDoc,
+} from '@/domains/activity';
 
 // ----- HMR-safe singleton bootstrap -----
 
@@ -240,7 +246,19 @@ function buildReadModels(sorc: ReturnType<typeof buildSorc>['sorc']) {
         apply: platformRolesApply as never,
     });
 
-    return { tenants, memberships, adminActivity, platformRoles };
+    const activity = new SorcReadModel<ActivityDoc, any, any, typeof sorc>(
+        sorc,
+        {
+            name: 'activity',
+            storeName: 'mongostore',
+            events: activityListen as never,
+            store: new MemoryReadModelStore<ActivityDoc>(),
+            key: activityKey as never,
+            apply: activityApply as never,
+        },
+    );
+
+    return { tenants, memberships, adminActivity, platformRoles, activity };
 }
 
 const globalForSorc = globalThis as unknown as {
@@ -262,6 +280,7 @@ if (!cache) {
     void readModels.memberships.subscribe();
     void readModels.adminActivity.subscribe();
     void readModels.platformRoles.subscribe();
+    void readModels.activity.subscribe();
 
     cache = { bundle, metrics, readModels };
     if (process.env.NODE_ENV !== 'production') {

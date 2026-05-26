@@ -11,6 +11,7 @@ import type {
     MembershipRole,
 } from '@/domains/tenants';
 import type { SorcUUID } from '@event-sorcerer/core';
+import { withToast } from '@/lib/toast-url';
 
 // ----- helpers -----
 
@@ -100,7 +101,13 @@ export async function createTenantAction(formData: FormData) {
     );
 
     revalidatePath('/tenants');
-    redirect(`/tenants/${tenantId}`);
+    redirect(
+        withToast(
+            `/tenants/${tenantId}`,
+            'success',
+            `Tenant "${displayName}" created`,
+        ),
+    );
 }
 
 export async function renameTenantAction(
@@ -126,6 +133,9 @@ export async function renameTenantAction(
     );
 
     revalidatePath(`/tenants/${tenantId}`);
+    redirect(
+        withToast(`/tenants/${tenantId}`, 'success', 'Tenant renamed'),
+    );
 }
 
 export async function inviteMemberAction(
@@ -158,6 +168,13 @@ export async function inviteMemberAction(
     );
 
     revalidatePath(`/tenants/${tenantId}/members`);
+    redirect(
+        withToast(
+            `/tenants/${tenantId}/members`,
+            'success',
+            `Invited ${invitedEmail}`,
+        ),
+    );
 }
 
 export async function changeMemberRoleByFormAction(formData: FormData) {

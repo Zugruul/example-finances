@@ -11,16 +11,10 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 
+import type { ActivityDoc } from '@/domains/activity';
+
 const TENANT_GRID_LIMIT = 6;
 const RECENT_ACTIVITY_LIMIT = 10;
-
-type ActivityRow = {
-    at: Date;
-    tenantId: string;
-    tenantName: string;
-    kind: 'tenant-created' | 'invited' | 'joined' | 'removed';
-    detail: string;
-};
 
 function formatRelative(d: Date): string {
     const diff = Date.now() - d.getTime();
@@ -139,51 +133,23 @@ export default async function DashboardPage() {
         if (t) tenantsById.set(String(t.tenantId), t);
     }
 
-    const activity: ActivityRow[] = [];
-    for (const { tenant } of activeTenants) {
-        activity.push({
-            at: new Date(tenant.createdAt),
-            tenantId: String(tenant.tenantId),
-            tenantName: tenant.displayName,
-            kind: 'tenant-created',
-            detail: `Tenant "${tenant.displayName}" created`,
-        });
-    }
-    for (const m of memberships) {
-        const tenant = tenantsById.get(String(m.tenantId));
-        if (!tenant) continue;
-        const tenantName = tenant.displayName;
-        const tid = String(m.tenantId);
-        if (m.invitedAt) {
-            activity.push({
-                at: new Date(m.invitedAt),
-                tenantId: tid,
-                tenantName,
-                kind: 'invited',
-                detail: `Invited ${m.invitedEmail} as ${m.role}`,
-            });
-        }
-        if (m.joinedAt) {
-            activity.push({
-                at: new Date(m.joinedAt),
-                tenantId: tid,
-                tenantName,
-                kind: 'joined',
-                detail: `${m.displayName ?? m.invitedEmail} joined as ${m.role}`,
-            });
-        }
-        if (m.removedAt) {
-            activity.push({
-                at: new Date(m.removedAt),
-                tenantId: tid,
-                tenantName,
-                kind: 'removed',
-                detail: `${m.displayName ?? m.invitedEmail} removed`,
-            });
-        }
-    }
-    activity.sort((a, b) => b.at.getTime() - a.at.getTime());
-    const recentActivity = activity.slice(0, RECENT_ACTIVITY_LIMIT);
+    // Recent activity comes from the dedicated cross-domain `activity`
+    // read model (one doc per published event). Filter to events scoped to
+    // tenants the user belongs to.
+    const myTenantIds = new Set(
+        activeTenants.map(({ tenant }) => String(tenant.tenantId)),
+    );
+    const allActivity = (await readModels.activity.find({})) as ActivityDoc[];
+    const recentActivity = allActivity
+        .filter(
+            (a) => !a.tenantId || myTenantIds.has(String(a.tenantId)),
+        )
+        .sort(
+            (a, b) =>
+                new Date(b.occurredAt).getTime() -
+                new Date(a.occurredAt).getTime(),
+        )
+        .slice(0, RECENT_ACTIVITY_LIMIT);
 
     const ownedOrAdminCount = activeTenants.filter(
         ({ membership }) =>
@@ -404,105 +370,56 @@ export default async function DashboardPage() {
                     <Card>
                         <CardContent className="p-0">
                             <ul className="divide-y">
-                                {recentActivity.map((row, idx) => (
-                                    <li
-                                        key={`${row.kind}-${row.tenantId}-${idx}`}
-                                        className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
-                                    >
-                                        <div className="flex min-w-0 flex-col">
-                                            <span className="truncate">
-                                                {row.detail}
-                                            </span>
-                                            <Link
-                                                href={`/tenants/${row.tenantId}`}
-                                                className="truncate text-xs text-muted-foreground hover:text-foreground"
-                                            >
-                                                {row.tenantName}
-                                            </Link>
-                                        </div>
-                                        <span
-                                            className="shrink-0 text-xs text-muted-foreground"
-                                            title={row.at.toISOString()}
+                                {recentActivity.map((row) => {
+                                    const tenantName = row.tenantId
+                                        ? tenantsById.get(String(row.tenantId))
+                                              ?.displayName
+                                        : undefined;
+                                    const at = new Date(row.occurredAt);
+                                    return (
+                                        <li
+                                            key={row.eventId}
+                                            className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
                                         >
-                                            {formatRelative(row.at)}
-                                        </span>
-                                    </li>
-                                ))}
+                                            <div className="flex min-w-0 flex-col">
+                                                <div className="flex items-center gap-2">
+                                                    <Badge
+                                                        variant={
+                                                            row.domain ===
+                                                            'admin'
+                                                                ? 'secondary'
+                                                                : 'outline'
+                                                        }
+                                                    >
+                                                        {row.domain}
+                                                    </Badge>
+                                                    <span className="truncate">
+                                                        {row.summary}
+                                                    </span>
+                                                </div>
+                                                {tenantName && row.tenantId ? (
+                                                    <Link
+                                                        href={`/tenants/${row.tenantId}`}
+                                                        className="truncate text-xs text-muted-foreground hover:text-foreground"
+                                                    >
+                                                        {tenantName}
+                                                    </Link>
+                                                ) : null}
+                                            </div>
+                                            <span
+                                                className="shrink-0 text-xs text-muted-foreground"
+                                                title={at.toISOString()}
+                                            >
+                                                {formatRelative(at)}
+                                            </span>
+                                        </li>
+                                    );
+                                })}
                             </ul>
                         </CardContent>
                     </Card>
                 )}
             </section>
-
-            {pendingInvitations.length > 0 ? (
-                <section className="flex flex-col gap-3">
-                    <h2 className="text-lg font-medium">Pending invitations</h2>
-                    <ul className="flex flex-col gap-2">
-                        {pendingInvitations.map((inv) => {
-                            const t = tenantsById.get(String(inv.tenantId));
-                            return (
-                                <li key={String(inv.membershipId)}>
-                                    <Card>
-                                        <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
-                                            <div className="flex flex-col gap-0.5 text-sm">
-                                                <span className="font-medium">
-                                                    {t?.displayName ?? 'Tenant'}
-                                                </span>
-                                                <span className="text-xs text-muted-foreground">
-                                                    Invited as {inv.role}
-                                                    {inv.invitedAt
-                                                        ? ` · ${formatRelative(
-                                                              new Date(
-                                                                  inv.invitedAt,
-                                                              ),
-                                                          )}`
-                                                        : ''}
-                                                </span>
-                                            </div>
-                                            <Link href={`/tenants/${inv.tenantId}`}>
-                                                <Button variant="outline" size="sm">
-                                                    Review
-                                                </Button>
-                                            </Link>
-                                        </CardContent>
-                                    </Card>
-                                </li>
-                            );
-                        })}
-                    </ul>
-                </section>
-            ) : null}
-
-            {recentActivity.length > 0 ? (
-                <section className="flex flex-col gap-3">
-                    <h2 className="text-lg font-medium">Recent activity</h2>
-                    <Card>
-                        <CardContent className="p-0">
-                            <ul className="divide-y">
-                                {recentActivity.map((row, i) => (
-                                    <li
-                                        key={`${row.tenantId}-${row.kind}-${row.at.getTime()}-${i}`}
-                                        className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
-                                    >
-                                        <div className="flex flex-col">
-                                            <span>{row.detail}</span>
-                                            <Link
-                                                href={`/tenants/${row.tenantId}`}
-                                                className="text-xs text-muted-foreground hover:text-foreground"
-                                            >
-                                                {row.tenantName}
-                                            </Link>
-                                        </div>
-                                        <span className="text-xs text-muted-foreground">
-                                            {formatRelative(row.at)}
-                                        </span>
-                                    </li>
-                                ))}
-                            </ul>
-                        </CardContent>
-                    </Card>
-                </section>
-            ) : null}
 
             {isAdmin ? (
                 <section>

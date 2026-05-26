@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { Suspense } from "react";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { AppShell } from "@/components/app-shell";
+import { Toaster } from "@/components/ui/sonner";
+import { ToastFromSearchParams } from "@/components/toast-from-search-params";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -33,6 +36,10 @@ export default async function RootLayout({
         <ImpersonationBanner />
         <AppShell />
         {children}
+        <Toaster position="top-right" richColors />
+        <Suspense fallback={null}>
+          <ToastFromSearchParams />
+        </Suspense>
       </body>
     </html>
   );
