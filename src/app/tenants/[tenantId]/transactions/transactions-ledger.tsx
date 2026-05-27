@@ -273,7 +273,11 @@ export function TransactionsLedger({
                                 key={r.transactionId}
                                 className={
                                     'border-b last:border-b-0 ' +
-                                    (cs.isCurrentlyReverted
+                                    // Revert rows AND currently-reverted
+                                    // originals both render struck-through
+                                    // so the chain reads as a paired
+                                    // cancellation at a glance.
+                                    (cs.isCurrentlyReverted || cs.isRevert
                                         ? 'opacity-60 line-through decoration-muted-foreground/40'
                                         : '') +
                                     (cs.isRevert ? ' bg-muted/30' : '')
