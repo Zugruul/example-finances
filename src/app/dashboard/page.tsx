@@ -16,6 +16,7 @@ import { nextDueOn } from '@/domains/recurring-templates';
 import { materializeDueTemplates } from '@/lib/recurring-materialize';
 import type { ActivityDoc } from '@/domains/activity';
 import type { SorcUUID } from '@event-sorcerer/core';
+import { IncomeExpenseBar, SpendingDonut } from './charts';
 
 const TENANT_GRID_LIMIT = 6;
 const RECENT_ACTIVITY_LIMIT = 10;
@@ -214,6 +215,60 @@ export default async function DashboardPage() {
               .slice(0, 5)
         : [];
 
+    // ----- Last-6-months income vs expense (bar chart) -----
+    // Walk back month-by-month and join with monthlyAggregate. Months
+    // with no events render as 0/0 — keeps the x-axis at a fixed width.
+    const sixMonths: Array<{ key: string; label: string }> = [];
+    {
+        const start = new Date(Date.UTC(year, month - 1, 1));
+        for (let i = 5; i >= 0; i--) {
+            const d = new Date(
+                Date.UTC(start.getUTCFullYear(), start.getUTCMonth() - i, 1),
+            );
+            const y = d.getUTCFullYear();
+            const m = d.getUTCMonth() + 1;
+            sixMonths.push({
+                key: `${y}-${String(m).padStart(2, '0')}`,
+                label: d.toLocaleString(undefined, {
+                    month: 'short',
+                    year: '2-digit',
+                    timeZone: 'UTC',
+                }),
+            });
+        }
+    }
+    const monthlyAggregates = currentTenantId
+        ? await Promise.all(
+              sixMonths.map(async ({ key }) => {
+                  const [agg] = await readModels.monthlyAggregate.find({
+                      aggregateKey: `${currentTenantId}:${key}`,
+                  });
+                  return { key, agg };
+              }),
+          )
+        : [];
+    const incomeExpenseSeries = sixMonths.map((m, i) => {
+        const agg = monthlyAggregates[i]?.agg;
+        return {
+            label: m.label,
+            income: agg?.income ?? 0,
+            expense: agg?.expense ?? 0,
+        };
+    });
+
+    // ----- Donut: this-month spending by category -----
+    const donutData = monthly
+        ? Object.entries(monthly.byCategory)
+              .map(([catId, v]) => ({
+                  name:
+                      catId === '__uncategorized'
+                          ? 'Uncategorized'
+                          : (categoryById.get(catId)?.name ?? 'Unknown'),
+                  value: v.expense,
+              }))
+              .filter((row) => row.value > 0)
+        : [];
+
     const budgets = currentTenantId
         ? (
               await readModels.budgetsByTenant.find({
@@ -401,6 +456,39 @@ export default async function DashboardPage() {
                             <div className="mt-2 text-xs text-muted-foreground">
                                 {year}-{String(month).padStart(2, '0')}
                             </div>
+                        </CardContent>
+                    </Card>
+                </section>
+            ) : null}
+
+            {currentTenantId ? (
+                <section className="grid gap-4 md:grid-cols-2">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Income vs expense</CardTitle>
+                            <p className="text-xs text-muted-foreground">
+                                Last 6 months
+                            </p>
+                        </CardHeader>
+                        <CardContent>
+                            <IncomeExpenseBar
+                                data={incomeExpenseSeries}
+                                currency={monthlyCurrency}
+                            />
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Spending by category</CardTitle>
+                            <p className="text-xs text-muted-foreground">
+                                This month
+                            </p>
+                        </CardHeader>
+                        <CardContent>
+                            <SpendingDonut
+                                data={donutData}
+                                currency={monthlyCurrency}
+                            />
                         </CardContent>
                     </Card>
                 </section>
