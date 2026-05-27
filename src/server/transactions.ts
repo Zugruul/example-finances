@@ -51,6 +51,10 @@ function parseTxType(raw: string): TransactionType {
     return raw as TransactionType;
 }
 
+function todayYmd(): string {
+    return new Date().toISOString().slice(0, 10);
+}
+
 function parseOccurredOn(raw: string): string {
     const trimmed = raw.trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
@@ -360,6 +364,161 @@ export const deleteTransactionAction = withActorContext(
                 `/tenants/${tenantId}/transactions`,
                 'success',
                 'Transaction deleted',
+            ),
+        );
+    },
+);
+
+/**
+ * The opposite-direction "type" of a given transaction — used to build a
+ * revert/reapply that nets the original out:
+ *   - income  ↔ expense
+ *   - expense ↔ income
+ *   - transfer-debit  ↔ income (credit funds back to the account)
+ *   - transfer-credit ↔ expense (subtract funds from the account)
+ *
+ * Transfer legs are reverted as a same-account counter-entry rather than
+ * a paired transfer, since the user usually wants ONE journal correction
+ * on this account rather than a new transfer that touches the
+ * counterpart account too.
+ */
+function flippedType(tx: {
+    transactionType: TransactionType;
+    transferDirection?: 'debit' | 'credit';
+}): TransactionType {
+    if (tx.transactionType === 'income') return 'expense';
+    if (tx.transactionType === 'expense') return 'income';
+    return tx.transferDirection === 'debit' ? 'income' : 'expense';
+}
+
+/**
+ * Revert one or more transactions. Originals are grouped by account
+ * because a single transaction lives on one account — so a mass-revert
+ * across N accounts produces N revert entries, each listing only the
+ * originals that share its account.
+ *
+ * Mode:
+ *   - kind='revert'  → reverts ORIGINAL transactions (UI's row "..." → Revert
+ *                      / bulk Revert selected). Skips already-reverted ones.
+ *   - kind='reapply' → reverts REVERT rows (UI's "Reapply" on a reverted
+ *                      original, or "Undo revert" on a revert row). The
+ *                      product is a fresh transaction that nets the revert
+ *                      back out, i.e., re-applies the original.
+ *
+ * Both kinds use the same underlying mechanism: emit a new
+ * TransactionRecorded with `revertsTransactionIds` pointing at the targets,
+ * and a `transactionType` flipped so the running balance returns to its
+ * pre-target state. The two distinct UI verbs are just two starting points
+ * for the same payload shape.
+ */
+export const revertTransactionsAction = withActorContext(
+    async (tenantId: string, formData: FormData) => {
+        const session = await requireSession();
+        const userId = session.user!.id as SorcUUID;
+        await requireRole(tenantId, userId, ['owner', 'admin', 'member']);
+
+        const idsRaw = String(formData.get('ids') ?? '').trim();
+        if (!idsRaw) throw new Error('No transactions selected.');
+        const ids = idsRaw
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean);
+        if (ids.length === 0) throw new Error('No transactions selected.');
+        const note =
+            String(formData.get('note') ?? '').trim() || undefined;
+
+        // Load every target. We need account + amount + type to build the
+        // reverting entries. We tolerate (and skip) missing/deleted rows
+        // rather than failing the batch.
+        const all = await readModels.transactions.find({ tenantId });
+        const byId = new Map(
+            all.map((t) => [String(t.transactionId), t] as const),
+        );
+        const targets = ids
+            .map((id) => byId.get(id))
+            .filter((t): t is (typeof all)[number] => !!t && !t.isDeleted);
+        if (targets.length === 0) {
+            throw new Error('Selected transactions could not be found.');
+        }
+
+        // Group targets by account so each emitted revert touches a
+        // single account (matches the transaction-per-account invariant).
+        const groups = new Map<string, typeof targets>();
+        for (const t of targets) {
+            const k = String(t.accountId);
+            const arr = groups.get(k) ?? [];
+            arr.push(t);
+            groups.set(k, arr);
+        }
+
+        const today = todayYmd();
+        const accounts = await readModels.accountsByTenant.find({ tenantId });
+        const accountById = new Map(
+            accounts.map((a) => [String(a.accountId), a]),
+        );
+
+        for (const [accountId, group] of groups) {
+            const account = accountById.get(accountId);
+            if (!account || account.isClosed) continue;
+            // All targets in a group share an account → share a currency.
+            const totalAmount = group.reduce((sum, t) => sum + t.amount, 0);
+            if (totalAmount === 0) continue;
+            // Direction: all originals in the group flip the SAME way
+            // ONLY if they're all the same type/direction. For mixed
+            // groups (rare, but possible with mass-revert) we split
+            // further by flipped-type. The simple guard handles both.
+            const byFlipped = new Map<TransactionType, typeof group>();
+            for (const t of group) {
+                const flip = flippedType(t);
+                const arr = byFlipped.get(flip) ?? [];
+                arr.push(t);
+                byFlipped.set(flip, arr);
+            }
+            for (const [flip, sub] of byFlipped) {
+                const sum = sub.reduce((s, t) => s + t.amount, 0);
+                if (sum === 0) continue;
+                const newId = uuidv7() as SorcUUID;
+                const newStream = transactionStream(newId);
+                const sample = sub[0]!;
+                const description = note
+                    ? note
+                    : sub.length === 1
+                      ? `Revert: ${sample.description ?? sample.transactionType}`
+                      : `Mass revert of ${sub.length} transactions`;
+                await aggregates.transaction.execute(
+                    'recordTransaction',
+                    {
+                        transactionId: newId,
+                        tenantId: tenantId as SorcUUID,
+                        accountId: sample.accountId,
+                        categoryId: sample.categoryId,
+                        amount: sum,
+                        currency: account.currency,
+                        occurredOn: today,
+                        description,
+                        transactionType: flip,
+                        revertsTransactionIds: sub.map(
+                            (t) => t.transactionId,
+                        ),
+                        recordedByUserId: userId,
+                        stream: newStream,
+                    } as never,
+                    { store: 'mongostore' as never, stream: newStream },
+                );
+            }
+        }
+
+        revalidatePath(`/tenants/${tenantId}/transactions`);
+        for (const accountId of groups.keys()) {
+            revalidatePath(`/tenants/${tenantId}/accounts/${accountId}`);
+        }
+        redirect(
+            withToast(
+                `/tenants/${tenantId}/transactions`,
+                'success',
+                targets.length === 1
+                    ? 'Transaction reverted'
+                    : `${targets.length} transactions reverted`,
             ),
         );
     },

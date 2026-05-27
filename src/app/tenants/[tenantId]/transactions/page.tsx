@@ -5,7 +5,9 @@ import { readModels } from '@/sorc';
 import {
     recordTransactionAction,
     recordTransferAction,
+    revertTransactionsAction,
 } from '@/server/transactions';
+import { TransactionsLedger, type LedgerRow } from './transactions-ledger';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -87,6 +89,43 @@ export default async function TransactionsListPage(props: {
 
     const record = recordTransactionAction.bind(null, tenantId);
     const transfer = recordTransferAction.bind(null, tenantId);
+    const revertAction = revertTransactionsAction.bind(null, tenantId);
+
+    // Note: for chain-state computation in the client ledger we need the
+    // FULL filtered set (so reverts can be paired with their originals
+    // even when both don't land on the same paginated page). We pass the
+    // current page's rows for display, plus include any "chain children"
+    // (reverts) of those rows from the broader filtered set so they
+    // render under the right parent in Ledger mode.
+    const pageIds = new Set(pageRows.map((r) => String(r.transactionId)));
+    const chainChildren = filtered.filter((r) => {
+        if (!r.revertsTransactionIds?.length) return false;
+        if (pageIds.has(String(r.transactionId))) return false; // already in page
+        return r.revertsTransactionIds.some((tid) => pageIds.has(String(tid)));
+    });
+    const ledgerRows: LedgerRow[] = [...pageRows, ...chainChildren].map((t) => {
+        const acc = accountById.get(String(t.accountId));
+        const cat = t.categoryId
+            ? categoryById.get(String(t.categoryId))
+            : null;
+        return {
+            transactionId: String(t.transactionId),
+            accountId: String(t.accountId),
+            accountName: acc?.name ?? '?',
+            categoryName: cat?.name ?? null,
+            amount: t.amount,
+            currency: t.currency,
+            occurredOn: t.occurredOn,
+            description: t.description ?? null,
+            transactionType: t.transactionType,
+            transferDirection: t.transferDirection,
+            revertsTransactionIds: t.revertsTransactionIds?.map(String),
+            recordedAtIso:
+                t.recordedAt instanceof Date
+                    ? t.recordedAt.toISOString()
+                    : new Date(t.recordedAt as any).toISOString(),
+        };
+    });
 
     function buildHref(overrides: Partial<SearchParams>): string {
         const qs = new URLSearchParams();
@@ -260,79 +299,12 @@ export default async function TransactionsListPage(props: {
                             }
                         />
                     ) : (
-                        <table className="w-full text-sm">
-                            <thead className="text-muted-foreground">
-                                <tr className="border-b">
-                                    <th className="px-2 py-2 text-left">
-                                        Date
-                                    </th>
-                                    <th className="px-2 py-2 text-left">
-                                        Description
-                                    </th>
-                                    <th className="px-2 py-2 text-left">
-                                        Account
-                                    </th>
-                                    <th className="px-2 py-2 text-left">
-                                        Category
-                                    </th>
-                                    <th className="px-2 py-2 text-left">
-                                        Type
-                                    </th>
-                                    <th className="px-2 py-2 text-right">
-                                        Amount
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {pageRows.map((t) => {
-                                    const acc = accountById.get(
-                                        String(t.accountId),
-                                    );
-                                    const cat = t.categoryId
-                                        ? categoryById.get(String(t.categoryId))
-                                        : null;
-                                    const sign =
-                                        t.transactionType === 'income' ? '+' : '−';
-                                    return (
-                                        <tr
-                                            key={String(t.transactionId)}
-                                            className="border-b last:border-b-0"
-                                        >
-                                            <td className="px-2 py-2 font-mono text-xs">
-                                                {t.occurredOn}
-                                            </td>
-                                            <td className="px-2 py-2">
-                                                <Link
-                                                    href={`/tenants/${tenantId}/transactions/${t.transactionId}`}
-                                                    className="hover:underline"
-                                                >
-                                                    {t.description ?? '—'}
-                                                </Link>
-                                            </td>
-                                            <td className="px-2 py-2">
-                                                {acc?.name ?? '?'}
-                                            </td>
-                                            <td className="px-2 py-2">
-                                                {cat?.name ?? '—'}
-                                            </td>
-                                            <td className="px-2 py-2">
-                                                <Badge variant="outline">
-                                                    {t.transactionType}
-                                                </Badge>
-                                            </td>
-                                            <td className="px-2 py-2 text-right font-mono tabular-nums">
-                                                {t.transactionType === 'transfer'
-                                                    ? formatMoney(
-                                                          t.amount,
-                                                          t.currency,
-                                                      )
-                                                    : `${sign}${formatMoney(t.amount, t.currency)}`}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
+                        <TransactionsLedger
+                            tenantId={tenantId}
+                            rows={ledgerRows}
+                            canRecord={canRecord}
+                            revertAction={revertAction}
+                        />
                     )}
                     {totalPages > 1 ? (
                         <div className="mt-4 flex items-center justify-between text-sm">

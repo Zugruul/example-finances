@@ -20,6 +20,7 @@ export type TransactionState = null | {
     counterpartTransactionId?: SorcUUID;
     transferDirection?: 'debit' | 'credit';
     templateId?: SorcUUID;
+    revertsTransactionIds?: SorcUUID[];
     recordedByUserId: SorcUUID;
     recordedAt: Date;
     isDeleted: boolean;
@@ -51,6 +52,8 @@ export function transactionReducer(
                     event.payload.counterpartTransactionId,
                 transferDirection: event.payload.transferDirection,
                 templateId: event.payload.templateId,
+                revertsTransactionIds:
+                    event.payload.revertsTransactionIds,
                 recordedByUserId: event.payload.recordedByUserId,
                 recordedAt: event.payload.recordedAt,
                 isDeleted: false,
@@ -98,6 +101,7 @@ export type RecordTransactionCmd = {
     counterpartTransactionId?: SorcUUID;
     transferDirection?: 'debit' | 'credit';
     templateId?: SorcUUID;
+    revertsTransactionIds?: SorcUUID[];
     recordedByUserId: SorcUUID;
     stream: TransactionStreamInstance;
 };
@@ -142,6 +146,7 @@ export const transactionCommands = {
                 counterpartTransactionId: cmd.counterpartTransactionId,
                 transferDirection: cmd.transferDirection,
                 templateId: cmd.templateId,
+                revertsTransactionIds: cmd.revertsTransactionIds,
                 recordedByUserId: cmd.recordedByUserId,
                 recordedAt: new Date(),
             } as InstanceType<typeof TransactionRecordedEvent>['payload'],

@@ -73,6 +73,19 @@ export class TransactionRecordedPayload extends SorcPayload {
     counterpartTransactionId?: SorcUUID;
 
     /**
+     * When this transaction reverses one or more prior transactions, the
+     * IDs of those originals. A single revert can target multiple
+     * originals (mass-revert) PROVIDED they all sit on the same account
+     * — the revert itself is a single transaction on one account.
+     *
+     * Stored as `type: 'object'` so the framework round-trips it as a
+     * structured array on the wire; the @foreign references aren't
+     * tracked at element level today (single-uuid only).
+     */
+    @property({ type: 'object' })
+    revertsTransactionIds?: SorcUUID[];
+
+    /**
      * For transfer legs only: which side of the transfer this event
      * represents. `'debit'` on the source account (balance subtracts),
      * `'credit'` on the destination account (balance adds). Undefined

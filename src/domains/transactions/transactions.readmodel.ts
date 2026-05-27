@@ -29,6 +29,8 @@ export type TransactionDoc = {
     counterpartTransactionId?: SorcUUID;
     transferDirection?: 'debit' | 'credit';
     templateId?: SorcUUID;
+    /** When this row is itself a revert, the ids of the originals it reverses. */
+    revertsTransactionIds?: SorcUUID[];
     recordedByUserId: SorcUUID;
     recordedAt: Date;
     isDeleted: boolean;
@@ -75,6 +77,8 @@ export function transactionsApply(
                     event.payload.counterpartTransactionId,
                 transferDirection: event.payload.transferDirection,
                 templateId: event.payload.templateId,
+                revertsTransactionIds:
+                    event.payload.revertsTransactionIds,
                 recordedByUserId: event.payload.recordedByUserId,
                 recordedAt: event.payload.recordedAt,
                 isDeleted: false,
