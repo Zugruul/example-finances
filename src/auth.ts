@@ -2,12 +2,17 @@ import NextAuth, { type NextAuthConfig } from 'next-auth';
 import GitHub from 'next-auth/providers/github';
 import Google from 'next-auth/providers/google';
 import { MongoDBAdapter } from '@auth/mongodb-adapter';
+import { v7 as uuidv7 } from 'uuid';
 import { FINANCES_DB, getSharedMongoClientPromise } from '@/lib/mongo';
 import { aggregates, readModels } from '@/sorc';
 import type {
     AdminActionsStreamInstance,
     PlatformRoleStreamInstance,
 } from '@/domains/admin';
+import type {
+    TenantStreamInstance,
+    MembershipStreamInstance,
+} from '@/domains/tenants';
 import type { UserStreamInstance } from '@/domains/users';
 import { requestContext, type SorcUUID } from '@event-sorcerer/core';
 import {
@@ -37,6 +42,17 @@ function userStream(userId: string): UserStreamInstance {
 
 function adminActionsStream(adminId: string): AdminActionsStreamInstance {
     return `admin-actions-${adminId}` as AdminActionsStreamInstance;
+}
+
+function tenantStream(tenantId: string): TenantStreamInstance {
+    return `tenant-${tenantId}` as TenantStreamInstance;
+}
+
+function membershipStream(
+    tenantId: string,
+    membershipId: string,
+): MembershipStreamInstance {
+    return `tenant-${tenantId}-membership-${membershipId}` as MembershipStreamInstance;
 }
 
 export const authConfig: NextAuthConfig = {
@@ -218,6 +234,79 @@ export const authConfig: NextAuthConfig = {
                 }
             } catch (err) {
                 console.error('[auth] user-profile bootstrap failed', err);
+            }
+
+            // Auto-create a "Personal" tenant for users with zero memberships.
+            // Idempotent on re-sign-in via the read-model empty-check — the
+            // tenant aggregate's createTenant also rejects on an existing
+            // stream, but the freshly-generated tenantId makes that a no-op.
+            // Mirrors createTenantAction in src/server/tenants.ts: create
+            // tenant → invite as owner → auto-accept.
+            try {
+                const targetUserId = user.id as SorcUUID;
+                const existingMemberships = await readModels.memberships.find({
+                    userId: targetUserId,
+                });
+                const hasActiveMembership = existingMemberships.some(
+                    (m) => !m.removedAt,
+                );
+                if (!hasActiveMembership) {
+                    const tenantId = uuidv7() as SorcUUID;
+                    const membershipId = uuidv7() as SorcUUID;
+                    const tStream = tenantStream(tenantId);
+                    const mStream = membershipStream(tenantId, membershipId);
+                    const email = user.email ?? '';
+                    const displayName = 'Personal';
+
+                    await requestContext.run(
+                        { actor: targetUserId },
+                        async () => {
+                            await aggregates.tenant.execute(
+                                'createTenant',
+                                {
+                                    tenantId,
+                                    displayName,
+                                    createdByUserId: targetUserId,
+                                    stream: tStream,
+                                } as never,
+                                {
+                                    store: 'mongostore' as never,
+                                    stream: tStream,
+                                },
+                            );
+                            await aggregates.membership.execute(
+                                'inviteMember',
+                                {
+                                    tenantId,
+                                    membershipId,
+                                    invitedEmail: email,
+                                    role: 'owner',
+                                    invitedByUserId: targetUserId,
+                                    stream: mStream,
+                                } as never,
+                                {
+                                    store: 'mongostore' as never,
+                                    stream: mStream,
+                                },
+                            );
+                            await aggregates.membership.execute(
+                                'acceptInvite',
+                                {
+                                    userId: targetUserId,
+                                    displayName:
+                                        user.name ?? email ?? 'Owner',
+                                    stream: mStream,
+                                } as never,
+                                {
+                                    store: 'mongostore' as never,
+                                    stream: mStream,
+                                },
+                            );
+                        },
+                    );
+                }
+            } catch (err) {
+                console.error('[auth] personal-tenant bootstrap failed', err);
             }
 
             if (!isNewUser) return;
