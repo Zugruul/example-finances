@@ -2,6 +2,7 @@ import { readModels } from '@/sorc';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/empty-state';
+import { BreadcrumbBar } from '@/components/breadcrumb-bar';
 import { ScrollTextIcon } from 'lucide-react';
 
 export default async function AdminAuditLogPage() {
@@ -12,6 +13,12 @@ export default async function AdminAuditLogPage() {
 
     return (
         <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 p-8">
+            <BreadcrumbBar
+                items={[
+                    { label: 'Admin', href: '/admin' },
+                    { label: 'Audit log' },
+                ]}
+            />
             <h1 className="text-2xl font-semibold tracking-tight">
                 Admin audit log
             </h1>

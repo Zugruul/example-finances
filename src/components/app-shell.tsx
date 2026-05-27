@@ -1,18 +1,18 @@
-import Link from 'next/link';
 import { auth } from '@/auth';
 import { readModels } from '@/sorc';
-import {
-    AppShellTenantSelector,
-    type TenantOption,
-} from '@/components/app-shell-tenant-selector';
-import { AppShellUserMenu } from '@/components/app-shell-user-menu';
-import { AppShellMobileMenu } from '@/components/app-shell-mobile-menu';
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { AppSidebar } from '@/components/app-sidebar';
+import { AppTopBar } from '@/components/app-top-bar';
 import { AppShellCommandPalette } from '@/components/app-shell-command-palette';
-import { AppShellTenantNav } from '@/components/app-shell-tenant-nav';
+import { type TenantOption } from '@/components/app-shell-tenant-selector';
 
-export async function AppShell() {
+export async function AppShell({ children }: { children: React.ReactNode }) {
     const session = await auth();
-    if (!session?.user?.id) return null;
+    if (!session?.user?.id) {
+        // Anonymous routes (`/`, `/auth/signin`) render with no shell.
+        return <>{children}</>;
+    }
 
     const userId = session.user.id;
     const memberships = (await readModels.memberships.find({ userId })).filter(
@@ -39,60 +39,22 @@ export async function AppShell() {
     const email = session.user.email ?? 'unknown';
 
     return (
-        <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-            <Link
-                href="/dashboard"
-                className="text-sm font-semibold tracking-tight"
-            >
-                Finances
-            </Link>
-
-            <div className="hidden md:flex md:items-center md:gap-2">
-                {tenants.length === 0 ? (
-                    <Link
-                        href="/tenants/new"
-                        className="text-sm text-muted-foreground hover:text-foreground"
-                    >
-                        Create your first tenant
-                    </Link>
-                ) : tenants.length === 1 ? (
-                    <>
-                        <Link
-                            href={`/tenants/${tenants[0].tenantId}`}
-                            className="text-sm font-medium hover:underline"
-                        >
-                            {tenants[0].displayName}
-                        </Link>
-                        <Link
-                            href="/tenants/new"
-                            className="text-xs text-muted-foreground hover:text-foreground"
-                        >
-                            Add another
-                        </Link>
-                    </>
-                ) : (
-                    <AppShellTenantSelector tenants={tenants} />
-                )}
-            </div>
-
-            <AppShellTenantNav />
-
-            <div className="flex-1" />
-
-            {isAdmin ? (
-                <Link
-                    href="/admin"
-                    className="hidden text-sm font-medium text-muted-foreground hover:text-foreground md:inline"
-                >
-                    Admin
-                </Link>
-            ) : null}
-
-            <AppShellMobileMenu tenants={tenants} showAdmin={isAdmin} />
-            <AppShellUserMenu email={email} />
-            {tenants.length >= 2 ? (
-                <AppShellCommandPalette tenants={tenants} />
-            ) : null}
-        </header>
+        <TooltipProvider>
+            <SidebarProvider>
+                <AppSidebar
+                    tenants={tenants}
+                    activeTenantId={undefined}
+                    isAdmin={isAdmin}
+                    email={email}
+                />
+                <SidebarInset>
+                    <AppTopBar email={email} />
+                    <div className="flex-1">{children}</div>
+                </SidebarInset>
+                {tenants.length >= 2 ? (
+                    <AppShellCommandPalette tenants={tenants} />
+                ) : null}
+            </SidebarProvider>
+        </TooltipProvider>
     );
 }

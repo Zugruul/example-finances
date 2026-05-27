@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { BreadcrumbBar } from '@/components/breadcrumb-bar';
 import { formatMoney } from '@/lib/money';
 
 type Params = { tenantId: string; accountId: string };
@@ -29,6 +30,7 @@ export default async function AccountDetailPage(props: {
 
     const [account] = await readModels.accountsByTenant.find({ accountId });
     if (!account || String(account.tenantId) !== tenantId) notFound();
+    const [tenant] = await readModels.tenants.find({ tenantId });
     const [balance] = await readModels.accountBalance.find({ accountId });
     const ledger = (
         await readModels.transactions.find({ accountId })
@@ -52,6 +54,20 @@ export default async function AccountDetailPage(props: {
 
     return (
         <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 p-8">
+            <BreadcrumbBar
+                items={[
+                    { label: 'Tenants', href: '/tenants' },
+                    {
+                        label: tenant?.displayName ?? tenantId,
+                        href: `/tenants/${tenantId}`,
+                    },
+                    {
+                        label: 'Accounts',
+                        href: `/tenants/${tenantId}/accounts`,
+                    },
+                    { label: account.name },
+                ]}
+            />
             <header className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-col gap-1">
                     <Link

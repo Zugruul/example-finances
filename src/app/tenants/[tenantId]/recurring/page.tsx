@@ -19,10 +19,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/empty-state';
+import { BreadcrumbBar } from '@/components/breadcrumb-bar';
+import { FilterTabs } from '@/components/filter-tabs';
 import { RotateCwIcon } from 'lucide-react';
 import { formatMoney } from '@/lib/money';
 
 type Params = { tenantId: string };
+type SearchParams = { view?: string };
 
 function describeCadence(c: {
     kind: string;
@@ -46,17 +49,25 @@ function describeCadence(c: {
 
 export default async function RecurringPage(props: {
     params: Promise<Params>;
+    searchParams: Promise<SearchParams>;
 }) {
     const { tenantId } = await props.params;
+    const sp = await props.searchParams;
+    const showArchived = sp.view === 'archived';
     const session = await auth();
     const userId = session?.user?.id;
 
     const [tenant] = await readModels.tenants.find({ tenantId });
     if (!tenant) notFound();
 
-    const templates = (
-        await readModels.recurringTemplates.find({ tenantId })
-    ).filter((t) => !t.isArchived);
+    const allTemplates = await readModels.recurringTemplates.find({ tenantId });
+    const templates = allTemplates.filter((t) =>
+        showArchived ? t.isArchived : !t.isArchived,
+    );
+    const counts = {
+        active: allTemplates.filter((t) => !t.isArchived).length,
+        archived: allTemplates.filter((t) => t.isArchived).length,
+    };
     const accounts = await readModels.accountsByTenant.find({ tenantId });
     const categories = await readModels.categoriesByTenant.find({ tenantId });
     const accountById = new Map(accounts.map((a) => [String(a.accountId), a]));
@@ -81,6 +92,16 @@ export default async function RecurringPage(props: {
 
     return (
         <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 p-8">
+            <BreadcrumbBar
+                items={[
+                    { label: 'Tenants', href: '/tenants' },
+                    {
+                        label: tenant.displayName,
+                        href: `/tenants/${tenantId}`,
+                    },
+                    { label: 'Recurring' },
+                ]}
+            />
             <header className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-col gap-1">
                     <h1 className="text-2xl font-semibold tracking-tight">
@@ -105,19 +126,44 @@ export default async function RecurringPage(props: {
                 ) : null}
             </header>
 
+            <FilterTabs
+                tabs={[
+                    {
+                        label: 'Active',
+                        href: `/tenants/${tenantId}/recurring`,
+                        active: !showArchived,
+                        count: counts.active,
+                    },
+                    {
+                        label: 'Archived',
+                        href: `/tenants/${tenantId}/recurring?view=archived`,
+                        active: showArchived,
+                        count: counts.archived,
+                    },
+                ]}
+            />
+
             <Card>
                 <CardHeader>
-                    <CardTitle>Active templates</CardTitle>
+                    <CardTitle>
+                        {showArchived ? 'Archived templates' : 'Active templates'}
+                    </CardTitle>
                 </CardHeader>
                 <CardContent>
                     {templates.length === 0 ? (
                         <EmptyState
                             icon={<RotateCwIcon />}
-                            title="No recurring templates yet"
+                            title={
+                                showArchived
+                                    ? 'No archived templates'
+                                    : 'No recurring templates yet'
+                            }
                             description={
-                                canManage
-                                    ? 'Create one with the form below.'
-                                    : 'Ask an owner or admin to set up recurring templates.'
+                                showArchived
+                                    ? 'Archived templates will appear here when you archive an active one.'
+                                    : canManage
+                                      ? 'Create one with the form below.'
+                                      : 'Ask an owner or admin to set up recurring templates.'
                             }
                         />
                     ) : (

@@ -14,6 +14,7 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { EmptyState } from '@/components/empty-state';
+import { BreadcrumbBar } from '@/components/breadcrumb-bar';
 import { UserIcon } from 'lucide-react';
 export default async function AdminUsersPage() {
     const [users, allRoles] = await Promise.all([
@@ -29,6 +30,12 @@ export default async function AdminUsersPage() {
 
     return (
         <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 p-8">
+            <BreadcrumbBar
+                items={[
+                    { label: 'Admin', href: '/admin' },
+                    { label: 'Users' },
+                ]}
+            />
             <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
 
             <Card>

@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { readModels } from '@/sorc';
 import { updateProfileAction } from '@/server/users';
+import { BreadcrumbBar } from '@/components/breadcrumb-bar';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -28,6 +29,7 @@ export default async function ProfilePage() {
 
     return (
         <main className="mx-auto flex min-h-[60vh] max-w-2xl flex-col gap-6 p-8">
+            <BreadcrumbBar items={[{ label: 'Profile' }]} />
             <div>
                 <h1 className="text-2xl font-semibold tracking-tight">
                     Your profile

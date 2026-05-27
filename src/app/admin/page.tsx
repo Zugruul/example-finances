@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { readModels } from '@/sorc';
 import { listAuthUsers } from '@/lib/auth-users';
 import { Button } from '@/components/ui/button';
+import { BreadcrumbBar } from '@/components/breadcrumb-bar';
 import {
     Card,
     CardContent,
@@ -50,6 +51,7 @@ export default async function AdminDashboardPage() {
 
     return (
         <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 p-8">
+            <BreadcrumbBar items={[{ label: 'Admin' }]} />
             <header className="flex items-center justify-between gap-4">
                 <h1 className="text-2xl font-semibold tracking-tight">
                     Admin dashboard

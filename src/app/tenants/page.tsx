@@ -10,6 +10,7 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { EmptyState } from '@/components/empty-state';
+import { BreadcrumbBar } from '@/components/breadcrumb-bar';
 
 export default async function TenantsPage() {
     const session = await auth();
@@ -32,6 +33,7 @@ export default async function TenantsPage() {
 
     return (
         <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 p-8">
+            <BreadcrumbBar items={[{ label: 'Tenants' }]} />
             <header className="flex items-center justify-between gap-4">
                 <h1 className="text-2xl font-semibold tracking-tight">
                     Tenants

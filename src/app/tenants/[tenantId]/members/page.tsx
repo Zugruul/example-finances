@@ -12,6 +12,7 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import { BreadcrumbBar } from '@/components/breadcrumb-bar';
 import type { MembershipRole } from '@/domains/tenants';
 
 type Params = { tenantId: string };
@@ -38,6 +39,16 @@ export default async function MembersPage(props: { params: Promise<Params> }) {
 
     return (
         <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 p-8">
+            <BreadcrumbBar
+                items={[
+                    { label: 'Tenants', href: '/tenants' },
+                    {
+                        label: tenant.displayName,
+                        href: `/tenants/${tenantId}`,
+                    },
+                    { label: 'Members' },
+                ]}
+            />
             <h1 className="text-2xl font-semibold tracking-tight">
                 Members of {tenant.displayName}
             </h1>

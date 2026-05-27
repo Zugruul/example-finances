@@ -16,6 +16,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { BreadcrumbBar } from '@/components/breadcrumb-bar';
 import { formatMoney, minorUnitsToMajor } from '@/lib/money';
 
 type Params = { tenantId: string; transactionId: string };
@@ -34,6 +35,7 @@ export default async function TransactionDetailPage(props: {
         accountId: tx.accountId,
     });
     const categories = await readModels.categoriesByTenant.find({ tenantId });
+    const [tenant] = await readModels.tenants.find({ tenantId });
 
     const memberships = userId
         ? (await readModels.memberships.find({ tenantId, userId })).filter(
@@ -51,6 +53,20 @@ export default async function TransactionDetailPage(props: {
 
     return (
         <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 p-8">
+            <BreadcrumbBar
+                items={[
+                    { label: 'Tenants', href: '/tenants' },
+                    {
+                        label: tenant?.displayName ?? tenantId,
+                        href: `/tenants/${tenantId}`,
+                    },
+                    {
+                        label: 'Transactions',
+                        href: `/tenants/${tenantId}/transactions`,
+                    },
+                    { label: tx.description ?? '(no description)' },
+                ]}
+            />
             <header className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-col gap-1">
                     <Link

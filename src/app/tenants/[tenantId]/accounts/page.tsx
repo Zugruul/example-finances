@@ -14,15 +14,28 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/empty-state';
+import { BreadcrumbBar } from '@/components/breadcrumb-bar';
+import { FilterTabs } from '@/components/filter-tabs';
 import { WalletIcon } from 'lucide-react';
 import { formatMoney } from '@/lib/money';
 
 type Params = { tenantId: string };
+type SearchParams = { view?: string };
+
+type AccountView = 'all' | 'archived' | 'closed';
+
+function parseView(raw?: string): AccountView {
+    if (raw === 'archived' || raw === 'closed') return raw;
+    return 'all';
+}
 
 export default async function AccountsListPage(props: {
     params: Promise<Params>;
+    searchParams: Promise<SearchParams>;
 }) {
     const { tenantId } = await props.params;
+    const sp = await props.searchParams;
+    const view = parseView(sp.view);
     const session = await auth();
     const userId = session?.user?.id;
 
@@ -46,12 +59,31 @@ export default async function AccountsListPage(props: {
 
     const create = createAccountAction.bind(null, tenantId);
 
+    const counts = {
+        all: accounts.filter((a) => !a.isClosed && !a.isArchived).length,
+        archived: accounts.filter((a) => a.isArchived && !a.isClosed).length,
+        closed: accounts.filter((a) => a.isClosed).length,
+    };
     const visible = accounts
-        .filter((a) => !a.isClosed)
+        .filter((a) => {
+            if (view === 'closed') return a.isClosed;
+            if (view === 'archived') return a.isArchived && !a.isClosed;
+            return !a.isClosed && !a.isArchived;
+        })
         .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 
     return (
         <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 p-8">
+            <BreadcrumbBar
+                items={[
+                    { label: 'Tenants', href: '/tenants' },
+                    {
+                        label: tenant.displayName,
+                        href: `/tenants/${tenantId}`,
+                    },
+                    { label: 'Accounts' },
+                ]}
+            />
             <header className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-col gap-1">
                     <h1 className="text-2xl font-semibold tracking-tight">
@@ -68,6 +100,29 @@ export default async function AccountsListPage(props: {
                     </p>
                 </div>
             </header>
+
+            <FilterTabs
+                tabs={[
+                    {
+                        label: 'Active',
+                        href: `/tenants/${tenantId}/accounts`,
+                        active: view === 'all',
+                        count: counts.all,
+                    },
+                    {
+                        label: 'Archived',
+                        href: `/tenants/${tenantId}/accounts?view=archived`,
+                        active: view === 'archived',
+                        count: counts.archived,
+                    },
+                    {
+                        label: 'Closed',
+                        href: `/tenants/${tenantId}/accounts?view=closed`,
+                        active: view === 'closed',
+                        count: counts.closed,
+                    },
+                ]}
+            />
 
             <Card>
                 <CardHeader>

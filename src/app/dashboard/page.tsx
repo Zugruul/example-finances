@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { readModels } from '@/sorc';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { BreadcrumbBar } from '@/components/breadcrumb-bar';
 import {
     Card,
     CardContent,
@@ -294,6 +295,7 @@ export default async function DashboardPage() {
 
     return (
         <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 p-6 md:p-8">
+            <BreadcrumbBar items={[{ label: 'Dashboard' }]} />
             <header className="flex flex-col gap-1">
                 <h1 className="text-2xl font-semibold tracking-tight">
                     Welcome back, {greetingName}.

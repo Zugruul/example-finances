@@ -8,10 +8,17 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { BreadcrumbBar } from '@/components/breadcrumb-bar';
 
 export default function NewTenantPage() {
     return (
         <main className="mx-auto flex min-h-screen max-w-lg flex-col gap-6 p-8">
+            <BreadcrumbBar
+                items={[
+                    { label: 'Tenants', href: '/tenants' },
+                    { label: 'New' },
+                ]}
+            />
             <h1 className="text-2xl font-semibold tracking-tight">
                 Create a tenant
             </h1>

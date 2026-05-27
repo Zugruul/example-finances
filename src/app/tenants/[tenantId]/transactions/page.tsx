@@ -17,6 +17,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/empty-state';
+import { BreadcrumbBar } from '@/components/breadcrumb-bar';
+import { FilterTabs } from '@/components/filter-tabs';
 import { ReceiptIcon } from 'lucide-react';
 import { formatMoney } from '@/lib/money';
 
@@ -98,6 +100,16 @@ export default async function TransactionsListPage(props: {
 
     return (
         <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 p-8">
+            <BreadcrumbBar
+                items={[
+                    { label: 'Tenants', href: '/tenants' },
+                    {
+                        label: tenant.displayName,
+                        href: `/tenants/${tenantId}`,
+                    },
+                    { label: 'Transactions' },
+                ]}
+            />
             <header className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-col gap-1">
                     <h1 className="text-2xl font-semibold tracking-tight">
@@ -114,6 +126,31 @@ export default async function TransactionsListPage(props: {
                     </p>
                 </div>
             </header>
+
+            <FilterTabs
+                tabs={[
+                    {
+                        label: 'All',
+                        href: buildHref({ transactionType: undefined }),
+                        active: !sp.transactionType,
+                    },
+                    {
+                        label: 'Income',
+                        href: buildHref({ transactionType: 'income' }),
+                        active: sp.transactionType === 'income',
+                    },
+                    {
+                        label: 'Expense',
+                        href: buildHref({ transactionType: 'expense' }),
+                        active: sp.transactionType === 'expense',
+                    },
+                    {
+                        label: 'Transfer',
+                        href: buildHref({ transactionType: 'transfer' }),
+                        active: sp.transactionType === 'transfer',
+                    },
+                ]}
+            />
 
             <Card>
                 <CardHeader>

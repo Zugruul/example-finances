@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/empty-state';
+import { BreadcrumbBar } from '@/components/breadcrumb-bar';
 import { TagIcon } from 'lucide-react';
 
 type Params = { tenantId: string };
@@ -111,6 +112,16 @@ export default async function CategoriesPage(props: {
 
     return (
         <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 p-8">
+            <BreadcrumbBar
+                items={[
+                    { label: 'Tenants', href: '/tenants' },
+                    {
+                        label: tenant.displayName,
+                        href: `/tenants/${tenantId}`,
+                    },
+                    { label: 'Categories' },
+                ]}
+            />
             <header className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-col gap-1">
                     <h1 className="text-2xl font-semibold tracking-tight">
