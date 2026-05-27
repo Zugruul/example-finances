@@ -40,9 +40,14 @@ type ViewMode = 'ledger' | 'transactions';
 
 type ChainState = {
     isRevert: boolean;
-    revertedBy: string | null; // id of the latest revert pointed at this tx
-    isCurrentlyReverted: boolean; // revertedBy exists AND that revert hasn't itself been reverted
-    chainRootId: string; // id of the chain root (original) — for grouping in Ledger mode
+    /** Immediate next-hop in the revert chain (or null at the leaf). */
+    revertedBy: string | null;
+    /** The end-of-chain row id (the most recent tx in this chain). */
+    chainLeafId: string;
+    /** True for non-revert rows whose chain ends with an odd number of revert hops. */
+    isCurrentlyReverted: boolean;
+    /** Original/root of the chain (used for grouping in Ledger mode). */
+    chainRootId: string;
 };
 
 function buildChainStates(rows: LedgerRow[]): Map<string, ChainState> {
@@ -71,18 +76,58 @@ function buildChainStates(rows: LedgerRow[]): Map<string, ChainState> {
         return findRoot(t.revertsTransactionIds[0]!, seen);
     }
 
+    /**
+     * Walk the chain of reverts forward from `id` until we hit the leaf
+     * (a tx that isn't itself reverted). Returns the number of edges
+     * walked, i.e., 0 if `id` has no reverts pointing at it, 1 if
+     * directly reverted, 2 if reverted-then-reapplied, etc.
+     */
+    function chainLengthFrom(id: string): number {
+        let len = 0;
+        let current = id;
+        const seen = new Set<string>();
+        while (true) {
+            if (seen.has(current)) break; // cycle guard
+            seen.add(current);
+            const next = revertsByTarget.get(current);
+            if (!next) break;
+            len++;
+            current = next.transactionId;
+        }
+        return len;
+    }
+
+    function chainLeafFrom(id: string): string {
+        let current = id;
+        const seen = new Set<string>();
+        while (true) {
+            if (seen.has(current)) break;
+            seen.add(current);
+            const next = revertsByTarget.get(current);
+            if (!next) return current;
+            current = next.transactionId;
+        }
+        return current;
+    }
+
     const out = new Map<string, ChainState>();
     for (const r of rows) {
         const isRevert = !!r.revertsTransactionIds?.length;
         const revert = revertsByTarget.get(r.transactionId) ?? null;
         const revertedBy = revert?.transactionId ?? null;
-        const revertOfRevert = revert
-            ? (revertsByTarget.get(revert.transactionId) ?? null)
-            : null;
-        const isCurrentlyReverted = !!revert && !revertOfRevert;
+        // Original (non-revert) rows are cancelled iff the chain from
+        // them ends with an odd number of revert hops. A single direct
+        // revert (len=1) cancels; a reapply (len=2) restores; a
+        // re-revert (len=3) cancels again; and so on.
+        // Revert rows are always rendered as part of a cancellation
+        // pair, so their "isCurrentlyReverted" flag is unused for
+        // strikethrough (they get struck through unconditionally).
+        const chainLen = chainLengthFrom(r.transactionId);
+        const isCurrentlyReverted = !isRevert && chainLen % 2 === 1;
         out.set(r.transactionId, {
             isRevert,
             revertedBy,
+            chainLeafId: chainLeafFrom(r.transactionId),
             isCurrentlyReverted,
             chainRootId: findRoot(r.transactionId),
         });
@@ -405,11 +450,9 @@ function RowMenu({
                         Revert
                     </DropdownMenuItem>
                 ) : null}
-                {isReverted && chainState.revertedBy ? (
+                {isReverted ? (
                     <DropdownMenuItem
-                        onClick={() =>
-                            onRevert([chainState.revertedBy as string])
-                        }
+                        onClick={() => onRevert([chainState.chainLeafId])}
                     >
                         Reapply
                     </DropdownMenuItem>
