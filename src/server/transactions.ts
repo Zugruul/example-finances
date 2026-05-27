@@ -4,8 +4,9 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { v7 as uuidv7 } from 'uuid';
 import { auth } from '@/auth';
-import { aggregates, readModels } from '@/sorc';
+import { aggregates, readModels, sorc } from '@/sorc';
 import {
+    TransactionRecordedEvent,
     type TransactionStreamInstance,
     type TransactionType,
 } from '@/domains/transactions';
@@ -259,73 +260,59 @@ export const recordTransferAction = withActorContext(
         const debitStream = transactionStream(debitId);
         const creditStream = transactionStream(creditId);
 
-        // Atomicity caveat: the framework has no cross-stream transactions.
-        // If the second publish fails after the first succeeds, the system
-        // is left with a one-leg transfer. Log loudly + best-effort
-        // compensate via a soft-delete of the first leg.
+        // Cross-stream atomic publish: both legs commit or neither does.
+        // Replaces the previous compensating-soft-delete pattern now that
+        // the framework's `sorc.publishAtomic` wraps the per-leg CAS +
+        // insert in a single Mongo transaction (F.framework #9).
+        const debitEvent = sorc.event({
+            name: 'TransactionRecorded' as const,
+            version: '2026-05-26' as const,
+            stream: debitStream,
+            payload: {
+                transactionId: debitId,
+                tenantId: tenantId as SorcUUID,
+                accountId: fromAccount.accountId,
+                amount,
+                currency: fromAccount.currency,
+                occurredOn,
+                description,
+                transactionType: 'transfer' as const,
+                counterpartTransactionId: creditId,
+                transferDirection: 'debit' as const,
+                recordedByUserId: userId,
+                recordedAt: new Date(),
+            } as InstanceType<typeof TransactionRecordedEvent>['payload'],
+        } as never);
+        const creditEvent = sorc.event({
+            name: 'TransactionRecorded' as const,
+            version: '2026-05-26' as const,
+            stream: creditStream,
+            payload: {
+                transactionId: creditId,
+                tenantId: tenantId as SorcUUID,
+                accountId: toAccount.accountId,
+                amount,
+                currency: toAccount.currency,
+                occurredOn,
+                description,
+                transactionType: 'transfer' as const,
+                counterpartTransactionId: debitId,
+                transferDirection: 'credit' as const,
+                recordedByUserId: userId,
+                recordedAt: new Date(),
+            } as InstanceType<typeof TransactionRecordedEvent>['payload'],
+        } as never);
         try {
-            await aggregates.transaction.execute(
-                'recordTransaction',
-                {
-                    transactionId: debitId,
-                    tenantId: tenantId as SorcUUID,
-                    accountId: fromAccount.accountId,
-                    amount,
-                    currency: fromAccount.currency,
-                    occurredOn,
-                    description,
-                    transactionType: 'transfer' as const,
-                    counterpartTransactionId: creditId,
-                    transferDirection: 'debit' as const,
-                    recordedByUserId: userId,
-                    stream: debitStream,
-                } as never,
-                { store: 'mongostore' as never, stream: debitStream },
-            );
+            await sorc.publishAtomic('mongostore' as never, [
+                { event: debitEvent, options: { expectedRevision: null } },
+                { event: creditEvent, options: { expectedRevision: null } },
+            ]);
         } catch (err) {
-            console.error('[transfer] debit leg failed', err);
-            throw err;
-        }
-
-        try {
-            await aggregates.transaction.execute(
-                'recordTransaction',
-                {
-                    transactionId: creditId,
-                    tenantId: tenantId as SorcUUID,
-                    accountId: toAccount.accountId,
-                    amount,
-                    currency: toAccount.currency,
-                    occurredOn,
-                    description,
-                    transactionType: 'transfer' as const,
-                    counterpartTransactionId: debitId,
-                    transferDirection: 'credit' as const,
-                    recordedByUserId: userId,
-                    stream: creditStream,
-                } as never,
-                { store: 'mongostore' as never, stream: creditStream },
-            );
-        } catch (err) {
-            console.error(
-                '[transfer] credit leg failed AFTER debit succeeded — compensating with soft-delete of debit leg',
-                { debitId, creditId, err },
-            );
-            try {
-                await aggregates.transaction.execute(
-                    'deleteTransaction',
-                    {
-                        deletedByUserId: userId,
-                        stream: debitStream,
-                    } as never,
-                    { store: 'mongostore' as never, stream: debitStream },
-                );
-            } catch (compErr) {
-                console.error(
-                    '[transfer] compensation soft-delete ALSO failed — manual intervention required',
-                    { debitId, compErr },
-                );
-            }
+            console.error('[transfer] atomic publish failed', {
+                debitId,
+                creditId,
+                err,
+            });
             throw err;
         }
 
