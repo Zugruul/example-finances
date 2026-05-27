@@ -529,14 +529,29 @@ export default async function TransactionsListPage(props: {
                                 </select>
                             </div>
                             <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="categoryId">Category</Label>
+                                <Label htmlFor="categoryId">
+                                    Category
+                                    {formDefaults ? (
+                                        <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+                                            (locked by template)
+                                        </span>
+                                    ) : null}
+                                </Label>
                                 <select
                                     id="categoryId"
-                                    name="categoryId"
+                                    name={
+                                        formDefaults
+                                            ? 'categoryId-display'
+                                            : 'categoryId'
+                                    }
                                     defaultValue={
                                         formDefaults?.categoryId ?? ''
                                     }
-                                    className="h-9 rounded-md border bg-background px-3 text-sm"
+                                    disabled={!!formDefaults}
+                                    aria-disabled={
+                                        formDefaults ? true : undefined
+                                    }
+                                    className="h-9 rounded-md border bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-70"
                                 >
                                     <option value="">(none)</option>
                                     {categories
@@ -550,21 +565,56 @@ export default async function TransactionsListPage(props: {
                                             </option>
                                         ))}
                                 </select>
+                                {/* Disabled <select> values aren't
+                                    submitted — mirror the template's
+                                    categoryId in a hidden input so the
+                                    server still receives it (and the
+                                    action validates equality with the
+                                    template). */}
+                                {formDefaults ? (
+                                    <input
+                                        type="hidden"
+                                        name="categoryId"
+                                        value={formDefaults.categoryId}
+                                    />
+                                ) : null}
                             </div>
                             <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="transactionType">Type</Label>
+                                <Label htmlFor="transactionType">
+                                    Type
+                                    {formDefaults ? (
+                                        <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+                                            (locked by template)
+                                        </span>
+                                    ) : null}
+                                </Label>
                                 <select
                                     id="transactionType"
-                                    name="transactionType"
+                                    name={
+                                        formDefaults
+                                            ? 'transactionType-display'
+                                            : 'transactionType'
+                                    }
                                     defaultValue={
                                         formDefaults?.transactionType ??
                                         'expense'
                                     }
-                                    className="h-9 rounded-md border bg-background px-3 text-sm"
+                                    disabled={!!formDefaults}
+                                    aria-disabled={
+                                        formDefaults ? true : undefined
+                                    }
+                                    className="h-9 rounded-md border bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-70"
                                 >
                                     <option value="income">income</option>
                                     <option value="expense">expense</option>
                                 </select>
+                                {formDefaults ? (
+                                    <input
+                                        type="hidden"
+                                        name="transactionType"
+                                        value={formDefaults.transactionType}
+                                    />
+                                ) : null}
                             </div>
                             <div className="flex flex-col gap-1.5">
                                 <Label htmlFor="amount">Amount</Label>

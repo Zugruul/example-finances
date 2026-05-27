@@ -351,6 +351,16 @@ export const applyTemplateAction = withActorContext(
                 `Invalid transaction type "${transactionType}"`,
             );
         }
+        // Template-locked fields: Type and Category MUST match what
+        // the template defined. The frontend disables both inputs, but
+        // we also enforce here so a hand-rolled POST can't bypass the
+        // lock and forge a transaction whose Type/Category disagrees
+        // with the template the cursor is being advanced for.
+        if (transactionType !== t.transactionType) {
+            throw new Error(
+                `Type "${transactionType}" does not match the template's "${t.transactionType}". Clear the template to record an unrelated transaction.`,
+            );
+        }
         const amountRaw = String(formData.get('amount') ?? '').trim();
         const amount = parseAmountToMinor(amountRaw, account.currency);
         if (amount === null || amount === 0) {
@@ -377,6 +387,15 @@ export const applyTemplateAction = withActorContext(
             if (!category || String(category.tenantId) !== tenantId) {
                 throw new Error('Category not found in this tenant.');
             }
+        }
+        // Template-locked: the submitted Category must match the
+        // template's exactly (including "no category" on both sides).
+        const tplCategory = t.categoryId ? String(t.categoryId) : '';
+        const submittedCategory = categoryId ? String(categoryId) : '';
+        if (submittedCategory !== tplCategory) {
+            throw new Error(
+                `Category does not match the template. Clear the template to record an unrelated transaction.`,
+            );
         }
 
         const transactionId = uuidv7() as SorcUUID;
