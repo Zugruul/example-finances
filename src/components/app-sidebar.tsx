@@ -40,6 +40,7 @@ import {
     type TenantOption,
 } from '@/components/app-shell-tenant-selector';
 import { signOutAction } from '@/server/auth-actions';
+import { tenantSwitchHref } from '@/lib/tenant-switch-href';
 
 export type AppSidebarProps = {
     tenants: TenantOption[];
@@ -217,7 +218,10 @@ export function AppSidebar({
                                             isActive={isActive}
                                             render={
                                                 <Link
-                                                    href={`/tenants/${t.tenantId}`}
+                                                    href={tenantSwitchHref(
+                                                        pathname,
+                                                        t.tenantId,
+                                                    )}
                                                 >
                                                     <CheckIcon
                                                         aria-hidden

@@ -11,6 +11,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
+import { tenantSwitchHref } from '@/lib/tenant-switch-href';
 
 export type TenantOption = {
     tenantId: string;
@@ -56,7 +57,10 @@ export function AppShellTenantSelector({
                             key={t.tenantId}
                             render={
                                 <Link
-                                    href={`/tenants/${t.tenantId}`}
+                                    href={tenantSwitchHref(
+                                        pathname ?? '',
+                                        t.tenantId,
+                                    )}
                                     className="flex w-full items-center justify-between"
                                 />
                             }
