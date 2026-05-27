@@ -78,6 +78,39 @@ export default async function AdminDashboardPage() {
                     value={recentActivityCount}
                 />
             </section>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Seed a tenant</CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3 text-sm">
+                    <p className="text-muted-foreground">
+                        Populate a tenant with demo data (accounts,
+                        categories, sample transactions, budgets, recurring
+                        templates). Routes through a 3-phase confirmation —
+                        the seed itself isn't reversible.
+                    </p>
+                    <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {tenants
+                            .filter((t) => !t.archivedAt)
+                            .map((t) => (
+                                <li key={String(t.tenantId)}>
+                                    <Link
+                                        href={`/admin/seed/${t.tenantId}?step=1`}
+                                        className="block rounded-md border p-3 transition hover:bg-accent/40"
+                                    >
+                                        <p className="text-sm font-medium">
+                                            {t.displayName}
+                                        </p>
+                                        <p className="font-mono text-xs text-muted-foreground">
+                                            {String(t.tenantId)}
+                                        </p>
+                                    </Link>
+                                </li>
+                            ))}
+                    </ul>
+                </CardContent>
+            </Card>
         </main>
     );
 }
