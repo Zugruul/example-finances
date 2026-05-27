@@ -54,6 +54,7 @@ export default async function SettingsPage() {
                     variant="outline"
                     size="sm"
                     className="mt-3"
+                    nativeButton={false}
                     render={
                         <Link href="/settings/audit">
                             <ScrollTextIcon className="size-4" />
