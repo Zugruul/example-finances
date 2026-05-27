@@ -1,17 +1,22 @@
-import { redirect } from 'next/navigation';
+import DashboardPage from '@/app/dashboard/page';
 
 /**
- * Temporary stopgap so the new "Dashboard" sidebar item under each
- * tenant doesn't 404 while the refactor that gives this route a real,
- * tenant-scoped render is still in flight. Forwards to /dashboard with
- * the tenant id as the filter; the global dashboard's tenant dropdown
- * already supports a single-tenant scope via that query param.
+ * Per-tenant dashboard route. Renders the same page as `/dashboard`
+ * but with the tenant filter locked to the path's `tenantId`.
+ *
+ * Implementation note: Server Components are async functions returning
+ * JSX, so we can call the global dashboard's default export directly
+ * and inject `searchParams.tenantId` from the path. No code
+ * duplication, no redirect — the URL stays `/tenants/<id>/dashboard`
+ * so the sidebar's Workspace > Dashboard item highlights correctly.
  */
-export default async function TenantDashboardRedirect({
+export default async function TenantDashboardPage({
     params,
 }: {
     params: Promise<{ tenantId: string }>;
 }) {
     const { tenantId } = await params;
-    redirect(`/dashboard?tenantId=${encodeURIComponent(tenantId)}`);
+    return DashboardPage({
+        searchParams: Promise.resolve({ tenantId }),
+    });
 }

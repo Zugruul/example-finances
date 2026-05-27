@@ -17,6 +17,7 @@ import { materializeDueTemplates } from '@/lib/recurring-materialize';
 import type { ActivityDoc } from '@/domains/activity';
 import type { SorcUUID } from '@event-sorcerer/core';
 import { IncomeExpenseBar, SpendingDonut } from './charts';
+import { TenantFilter, type TenantFilterOption } from './tenant-filter';
 
 const TENANT_GRID_LIMIT = 6;
 const RECENT_ACTIVITY_LIMIT = 10;
@@ -90,11 +91,18 @@ const roleVariant: Record<
     viewer: 'outline',
 };
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+    searchParams,
+}: {
+    searchParams?: Promise<{ tenantId?: string }>;
+}) {
     const session = await auth();
     if (!session?.user?.id) {
         redirect('/auth/signin?callbackUrl=/dashboard');
     }
+    const sp = (await searchParams) ?? {};
+    const requestedTenantId =
+        sp.tenantId && sp.tenantId !== 'all' ? sp.tenantId : undefined;
 
     const userId = session.user.id as SorcUUID;
     const email = session.user.email ?? '';
@@ -180,8 +188,17 @@ export default async function DashboardPage() {
         );
     }
 
-    // Pick a "current" tenant for this-month + spending — first one for now.
-    const currentTenantId = myTenantIds[0];
+    // Pick the "current" tenant for per-tenant cards. Honors a
+    // `?tenantId=X` filter when X is one of the user's tenants;
+    // otherwise falls back to the first tenant (default "All Tenants"
+    // view shows the first tenant's data for now — a real cross-tenant
+    // aggregation pass can come later without changing the URL contract).
+    const validatedRequestedTenantId =
+        requestedTenantId && myTenantIdSet.has(requestedTenantId)
+            ? requestedTenantId
+            : undefined;
+    const currentTenantId = validatedRequestedTenantId ?? myTenantIds[0];
+    const isScopedToOneTenant = Boolean(validatedRequestedTenantId);
     const { key: ymKey, year, month } = currentYearMonth();
     const monthly = currentTenantId
         ? (
@@ -348,22 +365,39 @@ export default async function DashboardPage() {
         ? tenantsById.get(currentTenantId)
         : undefined;
 
+    const tenantFilterOptions: TenantFilterOption[] = activeTenants.map(
+        ({ tenant }) => ({
+            id: String(tenant.tenantId),
+            displayName: tenant.displayName,
+        }),
+    );
+
     return (
         <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 p-6 md:p-8">
             <BreadcrumbBar items={[{ label: 'Dashboard' }]} />
-            <header className="flex flex-col gap-1">
-                <h1 className="text-2xl font-semibold tracking-tight">
-                    Welcome back, {greetingName}.
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                    {activeTenants.length === 0
-                        ? 'You don’t belong to any tenants yet — create one to get started.'
-                        : `You’re a member of ${activeTenants.length} ${
-                              activeTenants.length === 1
-                                  ? 'tenant'
-                                  : 'tenants'
-                          }.`}
-                </p>
+            <header className="flex flex-wrap items-end justify-between gap-3">
+                <div className="flex flex-col gap-1">
+                    <h1 className="text-2xl font-semibold tracking-tight">
+                        {isScopedToOneTenant
+                            ? `Dashboard — ${currentTenant?.displayName ?? ''}`
+                            : `Welcome back, ${greetingName}.`}
+                    </h1>
+                    <p className="text-sm text-muted-foreground">
+                        {activeTenants.length === 0
+                            ? 'You don’t belong to any tenants yet — create one to get started.'
+                            : isScopedToOneTenant
+                              ? 'Showing data for one tenant. Switch via the filter.'
+                              : `You’re a member of ${activeTenants.length} ${
+                                    activeTenants.length === 1
+                                        ? 'tenant'
+                                        : 'tenants'
+                                }.`}
+                    </p>
+                </div>
+                <TenantFilter
+                    options={tenantFilterOptions}
+                    value={validatedRequestedTenantId}
+                />
             </header>
 
             {activeTenants.length > 0 ? (
