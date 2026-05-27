@@ -12,7 +12,9 @@ import {
     ListTreeIcon,
     LogOutIcon,
     PiggyBankIcon,
+    PlusIcon,
     ScrollTextIcon,
+    SettingsIcon,
     ShieldCheckIcon,
     UserIcon,
     UsersIcon,
@@ -23,6 +25,7 @@ import {
     SidebarContent,
     SidebarFooter,
     SidebarGroup,
+    SidebarGroupAction,
     SidebarGroupContent,
     SidebarGroupLabel,
     SidebarHeader,
@@ -150,6 +153,18 @@ export function AppSidebar({
                         Finances
                     </Link>
                 </div>
+                <SidebarGroup className="px-0 py-0 group-data-[collapsible=icon]:hidden">
+                    <SidebarGroupLabel
+                        render={<Link href="/tenants">Tenants</Link>}
+                    />
+                    <SidebarGroupAction
+                        render={
+                            <Link href="/tenants/new" aria-label="New tenant">
+                                <PlusIcon />
+                            </Link>
+                        }
+                    />
+                </SidebarGroup>
                 <div className="px-1 group-data-[collapsible=icon]:hidden">
                     {tenants.length === 0 ? (
                         <SidebarMenu>
@@ -198,7 +213,9 @@ export function AppSidebar({
             <SidebarContent>
                 {tenantId ? (
                     <SidebarGroup>
-                        <SidebarGroupLabel>Tenant</SidebarGroupLabel>
+                        <SidebarGroupLabel
+                            render={<Link href="/dashboard">Workspace</Link>}
+                        />
                         <SidebarGroupContent>
                             <SidebarMenu>
                                 {tenantNavItems(tenantId).map((item) => {
@@ -225,38 +242,6 @@ export function AppSidebar({
                         </SidebarGroupContent>
                     </SidebarGroup>
                 ) : null}
-
-                <SidebarGroup>
-                    <SidebarGroupLabel>Workspace</SidebarGroupLabel>
-                    <SidebarGroupContent>
-                        <SidebarMenu>
-                            <SidebarMenuItem>
-                                <SidebarMenuButton
-                                    tooltip="All tenants"
-                                    isActive={pathname === '/tenants'}
-                                    render={
-                                        <Link href="/tenants">
-                                            <BuildingIcon />
-                                            <span>All tenants</span>
-                                        </Link>
-                                    }
-                                />
-                            </SidebarMenuItem>
-                            <SidebarMenuItem>
-                                <SidebarMenuButton
-                                    tooltip="Dashboard"
-                                    isActive={pathname === '/dashboard'}
-                                    render={
-                                        <Link href="/dashboard">
-                                            <LayoutDashboardIcon />
-                                            <span>Dashboard</span>
-                                        </Link>
-                                    }
-                                />
-                            </SidebarMenuItem>
-                        </SidebarMenu>
-                    </SidebarGroupContent>
-                </SidebarGroup>
 
                 {isAdmin ? (
                     <SidebarGroup className="mt-auto">
@@ -293,6 +278,18 @@ export function AppSidebar({
             <SidebarFooter>
                 <SidebarSeparator />
                 <SidebarMenu>
+                    <SidebarMenuItem>
+                        <SidebarMenuButton
+                            tooltip="Settings"
+                            isActive={pathname === '/settings'}
+                            render={
+                                <Link href="/settings">
+                                    <SettingsIcon />
+                                    <span>Settings</span>
+                                </Link>
+                            }
+                        />
+                    </SidebarMenuItem>
                     <SidebarMenuItem>
                         <SidebarMenuButton
                             tooltip={email}
