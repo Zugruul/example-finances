@@ -76,6 +76,10 @@ export function templateReducer(
             if (!state) return state;
             return {
                 ...state,
+                accountId:
+                    event.payload.accountId !== undefined
+                        ? event.payload.accountId
+                        : state.accountId,
                 amount:
                     event.payload.amount !== undefined
                         ? event.payload.amount
@@ -127,6 +131,7 @@ export type CreateTemplateCmd = {
 };
 
 export type UpdateTemplateCmd = {
+    accountId?: SorcUUID;
     amount?: number;
     description?: string;
     cadence?: Cadence;
@@ -196,6 +201,7 @@ export const templateCommands = {
             TemplateUpdatedEvent,
             {
                 templateId: state.templateId,
+                accountId: cmd.accountId,
                 amount: cmd.amount,
                 description: cmd.description,
                 cadence: cmd.cadence,

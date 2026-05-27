@@ -76,6 +76,15 @@ export class TemplateUpdatedPayload extends SorcPayload {
     @property({ type: 'uuid', required: true })
     templateId!: SorcUUID;
 
+    /**
+     * When the user moves a template to a different account. Future
+     * materializations land on the new account; past materializations
+     * stay on whichever account they were recorded against.
+     */
+    @foreign('accounts')
+    @property({ type: 'uuid' })
+    accountId?: SorcUUID;
+
     @property({ type: 'number' })
     amount?: number;
 

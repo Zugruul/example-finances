@@ -14,6 +14,7 @@ import {
     QuickPickTemplates,
     type QuickPickTemplate,
 } from './quick-pick-templates';
+import { TemplateHoverRoot } from './template-hover-root';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -239,6 +240,7 @@ export default async function TransactionsListPage(props: {
             transactionType: t.transactionType,
             transferDirection: t.transferDirection,
             revertsTransactionIds: t.revertsTransactionIds?.map(String),
+            templateId: t.templateId ? String(t.templateId) : undefined,
             recordedAtIso:
                 t.recordedAt instanceof Date
                     ? t.recordedAt.toISOString()
@@ -402,6 +404,7 @@ export default async function TransactionsListPage(props: {
                 </CardContent>
             </Card>
 
+            <TemplateHoverRoot>
             <Card>
                 <CardHeader>
                     <CardTitle>Ledger ({filtered.length})</CardTitle>
@@ -466,6 +469,7 @@ export default async function TransactionsListPage(props: {
                     activeTemplateId={formDefaults?.templateId}
                 />
             ) : null}
+            </TemplateHoverRoot>
 
             {canRecord && accounts.length > 0 ? (
                 <Card id="new-transaction-form">

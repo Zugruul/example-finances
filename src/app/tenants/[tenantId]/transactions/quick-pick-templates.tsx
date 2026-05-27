@@ -59,8 +59,9 @@ export function QuickPickTemplates({
                             key={t.templateId}
                             href={href}
                             scroll
+                            data-template-id={t.templateId}
                             className={
-                                'flex flex-col gap-1 rounded-md border p-3 text-left transition hover:bg-accent/40 ' +
+                                'flex flex-col gap-1 rounded-md border p-3 text-left transition hover:bg-accent/40 data-[template-active=true]:ring-2 data-[template-active=true]:ring-amber-400 data-[template-active=true]:ring-offset-1 ' +
                                 (isActive
                                     ? 'border-primary ring-2 ring-primary/30 '
                                     : '') +

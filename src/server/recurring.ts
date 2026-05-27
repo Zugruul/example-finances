@@ -179,6 +179,112 @@ export const createTemplateAction = withActorContext(
     },
 );
 
+/**
+ * Edit an existing recurring template. Only Cadence, Account, Amount,
+ * and Description are mutable — Type and Category are immutable for
+ * the template's life (changing them would invalidate the historical
+ * meaning of the materialized transactions that already point back at
+ * this template).
+ *
+ * Form fields:
+ *   - cadence-kind + cadence-dayOfWeek/Month/Month etc (same shape as
+ *     create); reuses parseCadence.
+ *   - accountId
+ *   - amount (decimal string in account currency; converted to minor)
+ *   - description (optional, blank clears)
+ *
+ * Server-side checks: account belongs to this tenant + isn't closed.
+ * The aggregate's reducer threads partial undefined values so leaving
+ * a field blank leaves the prior value alone.
+ */
+export const updateTemplateAction = withActorContext(
+    async (tenantId: string, templateId: string, formData: FormData) => {
+        const session = await requireSession();
+        const userId = session.user!.id as SorcUUID;
+        await requireRole(tenantId, userId, ['owner', 'admin', 'member']);
+
+        const [t] = await readModels.recurringTemplates.find({
+            templateId: templateId as SorcUUID,
+        });
+        if (!t || String(t.tenantId) !== tenantId) {
+            throw new Error('Template not found in this tenant.');
+        }
+        if (t.isArchived) throw new Error('Template is archived.');
+
+        const accountIdRaw = String(
+            formData.get('accountId') ?? '',
+        ).trim();
+        if (!accountIdRaw) throw new Error('Account is required.');
+        const [account] = await readModels.accountsByTenant.find({
+            accountId: accountIdRaw,
+        });
+        if (!account || String(account.tenantId) !== tenantId) {
+            throw new Error('Account not found in this tenant.');
+        }
+        if (account.isClosed) {
+            throw new Error(
+                'Account is closed; cannot host a recurring template.',
+            );
+        }
+        const accountId =
+            String(account.accountId) === String(t.accountId)
+                ? undefined
+                : (account.accountId as SorcUUID);
+
+        const amountRaw = String(formData.get('amount') ?? '').trim();
+        const amountMinor = amountRaw
+            ? parseAmountToMinor(amountRaw, account.currency)
+            : null;
+        if (amountRaw && (amountMinor === null || amountMinor <= 0)) {
+            throw new Error('Amount must be a positive decimal.');
+        }
+        const amount =
+            amountMinor !== null && amountMinor !== t.amount
+                ? amountMinor
+                : undefined;
+
+        const descriptionRaw = String(formData.get('description') ?? '');
+        // Trim and treat empty as undefined ("no change"); to actively
+        // clear a description, pass a single space (we treat that as
+        // empty string).
+        const descriptionTrimmed = descriptionRaw.trim();
+        const description =
+            descriptionTrimmed === (t.description ?? '')
+                ? undefined
+                : descriptionTrimmed === ''
+                  ? undefined // can't clear with blank — keeps current
+                  : descriptionTrimmed;
+
+        const cadence = parseCadence(formData);
+        const cadenceChanged =
+            JSON.stringify(cadence) !== JSON.stringify(t.cadence);
+
+        const stream = templateStream(templateId);
+        await aggregates.recurringTemplate.execute(
+            'updateTemplate',
+            {
+                accountId,
+                amount,
+                description,
+                cadence: cadenceChanged ? cadence : undefined,
+                updatedByUserId: userId,
+                stream,
+            } as never,
+            { store: 'mongostore' as never, stream },
+        );
+
+        revalidatePath(`/tenants/${tenantId}/recurring`);
+        revalidatePath(`/tenants/${tenantId}/transactions`);
+        redirect(
+            withToast(
+                `/tenants/${tenantId}/recurring`,
+                'success',
+                'Template updated',
+            ),
+        );
+    },
+);
+
 export const archiveTemplateAction = withActorContext(
     async (tenantId: string, templateId: string) => {
         const session = await requireSession();

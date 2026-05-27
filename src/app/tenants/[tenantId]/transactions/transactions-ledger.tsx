@@ -25,6 +25,9 @@ export type LedgerRow = {
     transactionType: 'income' | 'expense' | 'transfer';
     transferDirection?: 'debit' | 'credit';
     revertsTransactionIds?: string[];
+    /** When the transaction was created from a recurring template, the
+     *  template's id (for the cross-highlight on /transactions). */
+    templateId?: string;
     recordedAtIso: string;
 };
 
@@ -316,8 +319,9 @@ export function TransactionsLedger({
                         return (
                             <tr
                                 key={r.transactionId}
+                                data-template-id={r.templateId}
                                 className={
-                                    'border-b last:border-b-0 ' +
+                                    'border-b last:border-b-0 transition-colors data-[template-active=true]:bg-amber-100/60 data-[template-active=true]:dark:bg-amber-900/30 ' +
                                     // Revert rows AND currently-reverted
                                     // originals both render struck-through
                                     // so the chain reads as a paired

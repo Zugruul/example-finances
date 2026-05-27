@@ -250,15 +250,27 @@ export default async function RecurringPage(props: {
                                             </td>
                                             <td className="px-2 py-2 text-right">
                                                 {canManage ? (
-                                                    <form action={archive}>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="ghost"
-                                                            type="submit"
+                                                    <div className="flex items-center justify-end gap-1">
+                                                        <Link
+                                                            href={`/tenants/${tenantId}/recurring/${t.templateId}/edit`}
                                                         >
-                                                            Archive
-                                                        </Button>
-                                                    </form>
+                                                            <Button
+                                                                size="sm"
+                                                                variant="ghost"
+                                                            >
+                                                                Edit
+                                                            </Button>
+                                                        </Link>
+                                                        <form action={archive}>
+                                                            <Button
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                type="submit"
+                                                            >
+                                                                Archive
+                                                            </Button>
+                                                        </form>
+                                                    </div>
                                                 ) : null}
                                             </td>
                                         </tr>
