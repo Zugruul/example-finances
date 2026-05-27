@@ -7,7 +7,13 @@ import {
     recordTransferAction,
     revertTransactionsAction,
 } from '@/server/transactions';
+import { applyTemplateAction } from '@/server/recurring';
+import { nextDueOn, type Cadence } from '@/domains/recurring-templates';
 import { TransactionsLedger, type LedgerRow } from './transactions-ledger';
+import {
+    QuickPickTemplates,
+    type QuickPickTemplate,
+} from './quick-pick-templates';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -35,6 +41,19 @@ type SearchParams = {
 };
 
 const PAGE_SIZE = 50;
+
+function formatCadence(c: Cadence): string {
+    switch (c.kind) {
+        case 'daily':
+            return 'daily';
+        case 'weekly':
+            return `weekly (day ${c.dayOfWeek})`;
+        case 'monthly':
+            return `monthly (day ${c.dayOfMonth})`;
+        case 'yearly':
+            return `yearly (${c.month}/${c.dayOfMonth})`;
+    }
+}
 
 export default async function TransactionsListPage(props: {
     params: Promise<Params>;
@@ -90,6 +109,58 @@ export default async function TransactionsListPage(props: {
     const record = recordTransactionAction.bind(null, tenantId);
     const transfer = recordTransferAction.bind(null, tenantId);
     const revertAction = revertTransactionsAction.bind(null, tenantId);
+    const applyTemplate = applyTemplateAction.bind(null, tenantId);
+
+    // Build quick-pick cards from active templates. The card shows the
+    // next on-cadence due date (or "no upcoming date" for ended ones);
+    // a `due` badge marks anything ≤ today.
+    const today = new Date().toISOString().slice(0, 10);
+    const templates = (
+        await readModels.recurringTemplates.find({ tenantId })
+    ).filter((t) => !t.isArchived);
+    const quickPickTemplates: QuickPickTemplate[] = templates
+        .map((t) => {
+            const due = nextDueOn(
+                t.cadence as Cadence,
+                t.startsOn,
+                t.lastMaterializedOn,
+                t.endsOn,
+            );
+            const account = accountById.get(String(t.accountId));
+            const cadenceLabel = formatCadence(t.cadence as Cadence);
+            return {
+                templateId: String(t.templateId),
+                title: t.description ?? t.transactionType,
+                transactionType: t.transactionType as 'income' | 'expense',
+                amount: t.amount,
+                currency: account?.currency ?? 'USD',
+                accountName: account?.name ?? '?',
+                nextDueOn: due,
+                isDueNow: !!due && due <= today,
+                cadenceLabel,
+            };
+        })
+        // Hide templates whose accounts have been closed (would fail on apply).
+        .filter((t) => {
+            const account = accountById.get(
+                templates.find((tt) => String(tt.templateId) === t.templateId)
+                    ?.accountId
+                    ? String(
+                          templates.find(
+                              (tt) => String(tt.templateId) === t.templateId,
+                          )!.accountId,
+                      )
+                    : '',
+            );
+            return account && !account.isClosed;
+        })
+        // Surface due ones first, then by next due date.
+        .sort((a, b) => {
+            if (a.isDueNow !== b.isDueNow) return a.isDueNow ? -1 : 1;
+            const ad = a.nextDueOn ?? '￿';
+            const bd = b.nextDueOn ?? '￿';
+            return ad < bd ? -1 : ad > bd ? 1 : 0;
+        });
 
     // Note: for chain-state computation in the client ledger we need the
     // FULL filtered set (so reverts can be paired with their originals
@@ -339,6 +410,13 @@ export default async function TransactionsListPage(props: {
                     ) : null}
                 </CardContent>
             </Card>
+
+            {canRecord && quickPickTemplates.length > 0 ? (
+                <QuickPickTemplates
+                    templates={quickPickTemplates}
+                    applyAction={applyTemplate}
+                />
+            ) : null}
 
             {canRecord && accounts.length > 0 ? (
                 <Card>

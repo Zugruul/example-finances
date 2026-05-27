@@ -4,14 +4,19 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { v7 as uuidv7 } from 'uuid';
 import { auth } from '@/auth';
-import { aggregates, readModels } from '@/sorc';
+import { aggregates, readModels, sorc } from '@/sorc';
 import {
     dueDatesUpTo,
+    nextDueOn,
+    TemplateMaterializedEvent,
     type TemplateStreamInstance,
     type TemplateType,
     type Cadence,
 } from '@/domains/recurring-templates';
-import type { TransactionStreamInstance } from '@/domains/transactions';
+import {
+    TransactionRecordedEvent,
+    type TransactionStreamInstance,
+} from '@/domains/transactions';
 import type { MembershipRole } from '@/domains/tenants';
 import type { SorcUUID } from '@event-sorcerer/core';
 import { withToast } from '@/lib/toast-url';
@@ -285,6 +290,126 @@ export const materializeDueTemplatesAction = withActorContext(
                 emitted > 0
                     ? `Materialized ${emitted} transaction(s)`
                     : 'Nothing due',
+            ),
+        );
+    },
+);
+
+/**
+ * Apply ONE recurring template for a single occurrence — used by the
+ * quick-pick cards on /tenants/[id]/transactions. Emits both a fresh
+ * `TransactionRecorded` AND a `TemplateMaterialized` for the same
+ * `occurredOn` inside a single Mongo transaction (sorc.publishAtomic),
+ * so the template's `lastMaterializedOn` cursor advances or neither
+ * event lands.
+ *
+ * If `occurredOn` is omitted, uses the template's next due date (or
+ * today if no on-cadence date is available).
+ */
+export const applyTemplateAction = withActorContext(
+    async (tenantId: string, formData: FormData) => {
+        const session = await requireSession();
+        const userId = session.user!.id as SorcUUID;
+        await requireRole(tenantId, userId, ['owner', 'admin', 'member']);
+
+        const templateId = String(formData.get('templateId') ?? '').trim();
+        if (!templateId) throw new Error('templateId is required.');
+        const occurredOnRaw = String(
+            formData.get('occurredOn') ?? '',
+        ).trim();
+
+        const [t] = await readModels.recurringTemplates.find({
+            templateId: templateId as SorcUUID,
+        });
+        if (!t || String(t.tenantId) !== tenantId) {
+            throw new Error('Template not found in this tenant.');
+        }
+        if (t.isArchived) throw new Error('Template is archived.');
+
+        const [account] = await readModels.accountsByTenant.find({
+            accountId: t.accountId,
+        });
+        if (!account || account.isClosed) {
+            throw new Error('Account not available for this template.');
+        }
+
+        // Pick the date. Caller override > template's next on-cadence
+        // due date > today. The aggregate enforces idempotence by
+        // refusing to materialize a date at-or-before lastMaterializedOn.
+        const today = todayYmd();
+        const due = nextDueOn(
+            t.cadence,
+            t.startsOn,
+            t.lastMaterializedOn,
+            t.endsOn,
+        );
+        const occurredOn = occurredOnRaw || due || today;
+
+        const transactionId = uuidv7() as SorcUUID;
+        const txStream = transactionStream(transactionId);
+        const tplStream = templateStream(String(t.templateId));
+
+        // Atomic pair: the transaction AND the template-materialized
+        // event commit together. If either CAS fails, both abort. This
+        // closes the "transaction succeeded but template cursor didn't
+        // advance" gap that the bulk materializeDueTemplates flow still
+        // has.
+        const txEvent = sorc.event({
+            name: 'TransactionRecorded' as const,
+            version: '2026-05-26' as const,
+            stream: txStream,
+            payload: {
+                transactionId,
+                tenantId: tenantId as SorcUUID,
+                accountId: t.accountId,
+                categoryId: t.categoryId,
+                amount: t.amount,
+                currency: account.currency,
+                occurredOn,
+                description: t.description,
+                transactionType: t.transactionType,
+                templateId: t.templateId,
+                recordedByUserId: userId,
+                recordedAt: new Date(),
+            } as InstanceType<typeof TransactionRecordedEvent>['payload'],
+        } as never);
+        const tplEvent = sorc.event({
+            name: 'TemplateMaterialized' as const,
+            version: '2026-05-26' as const,
+            stream: tplStream,
+            payload: {
+                templateId: t.templateId,
+                materializedOn: occurredOn,
+                transactionId,
+                materializedAt: new Date(),
+            } as InstanceType<typeof TemplateMaterializedEvent>['payload'],
+        } as never);
+
+        try {
+            await sorc.publishAtomic('mongostore' as never, [
+                {
+                    event: txEvent,
+                    options: { expectedRevision: null },
+                },
+                { event: tplEvent },
+            ]);
+        } catch (err) {
+            console.error('[apply-template] atomic publish failed', {
+                templateId,
+                occurredOn,
+                err,
+            });
+            throw err;
+        }
+
+        revalidatePath(`/tenants/${tenantId}/transactions`);
+        revalidatePath(`/tenants/${tenantId}/recurring`);
+        revalidatePath(`/tenants/${tenantId}/accounts/${t.accountId}`);
+        redirect(
+            withToast(
+                `/tenants/${tenantId}/transactions`,
+                'success',
+                `Recorded ${t.description ?? t.transactionType} for ${occurredOn}`,
             ),
         );
     },
