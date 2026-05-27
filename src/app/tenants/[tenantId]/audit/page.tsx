@@ -74,15 +74,6 @@ export default async function TenantAuditPage({
                     { label: 'Audit' },
                 ]}
             />
-            <div>
-                <h1 className="text-2xl font-semibold tracking-tight">
-                    Audit log
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                    Every action recorded in {tenant?.displayName ?? 'this workspace'}, newest first. Updates live.
-                </p>
-            </div>
-
             <AuditStream
                 tenantId={tenantId}
                 initialCards={initialCards}
@@ -93,6 +84,8 @@ export default async function TenantAuditPage({
                     categories: Array.from(ctx.categories.entries()),
                     users: Array.from(ctx.users.entries()),
                 }}
+                title="Audit log"
+                description={`Every action recorded in ${tenant?.displayName ?? 'this workspace'}, newest first. Updates live.`}
             />
         </main>
     );

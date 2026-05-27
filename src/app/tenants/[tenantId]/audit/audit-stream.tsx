@@ -31,6 +31,9 @@ interface AuditStreamProps {
         categories: [string, { displayName: string }][];
         users: [string, { email: string }][];
     };
+    /** Page title + description rendered alongside the live badge. */
+    title: string;
+    description: string;
 }
 
 type DomainFilter = AuditDomain | 'all';
@@ -41,6 +44,8 @@ export function AuditStream({
     initialNextOlder,
     accountOptions,
     ctxSerialized,
+    title,
+    description,
 }: AuditStreamProps) {
     // Reconstruct the formatter context client-side so SSE arrivals get
     // the same human labels as the server-rendered first page.
@@ -242,16 +247,25 @@ export function AuditStream({
 
     return (
         <div ref={containerRef} className="flex flex-col gap-4">
-            {/* Status + filters */}
-            <div className="flex flex-wrap items-center gap-2">
+            {/* Header — title on the left, live status on the right */}
+            <div className="flex items-start justify-between gap-3">
+                <div>
+                    <h1 className="text-2xl font-semibold tracking-tight">
+                        {title}
+                    </h1>
+                    <p className="text-sm text-muted-foreground">
+                        {description}
+                    </p>
+                </div>
                 <Badge
                     variant="outline"
                     className={
-                        streamStatus === 'live'
+                        'shrink-0 ' +
+                        (streamStatus === 'live'
                             ? 'border-emerald-500 text-emerald-700 dark:text-emerald-300'
                             : streamStatus === 'offline'
                               ? 'border-amber-500 text-amber-700 dark:text-amber-300'
-                              : ''
+                              : '')
                     }
                 >
                     {streamStatus === 'live'
@@ -260,6 +274,10 @@ export function AuditStream({
                           ? '○ reconnecting'
                           : '○ connecting'}
                 </Badge>
+            </div>
+
+            {/* Filters */}
+            <div className="flex flex-wrap items-center gap-2">
                 <div className="flex flex-wrap gap-1">
                     {AUDIT_DOMAINS.map((d) => {
                         const active = domainFilter === d.value;
