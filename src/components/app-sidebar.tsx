@@ -145,15 +145,20 @@ export function AppSidebar({
     //   1. pathname (when on a `/tenants/[id]/...` route)
     //   2. activeTenantId prop (resolved from the `finances.last-tenant`
     //      cookie by AppShell — set on every tenant-page render)
-    //   3. tenants[0] (Personal / first by membership)
+    // When neither resolves, the Workspace group renders DISABLED + muted
+    // (no hrefs, reduced opacity) — the user hasn't picked a tenant yet
+    // so we won't quietly point links at tenants[0].
     const pathTenantMatch = pathname.match(/^\/tenants\/([^/]+)/);
     const pathTenantId = pathTenantMatch?.[1];
     const isMember = (id: string | undefined) =>
         !!id && tenants.some((t) => t.tenantId === id);
-    const tenantId =
+    const resolvedTenantId =
         (isMember(pathTenantId) ? pathTenantId : undefined) ??
-        (isMember(activeTenantId) ? activeTenantId : undefined) ??
+        (isMember(activeTenantId) ? activeTenantId : undefined);
+    const tenantId =
+        resolvedTenantId ??
         (tenants.length > 0 ? tenants[0].tenantId : undefined);
+    const workspaceDisabled = !resolvedTenantId && tenants.length > 0;
 
     return (
         <Sidebar collapsible="icon">
@@ -236,9 +241,27 @@ export function AppSidebar({
             </SidebarHeader>
             <SidebarContent>
                 {tenantId ? (
-                    <SidebarGroup>
+                    <SidebarGroup
+                        className={
+                            workspaceDisabled
+                                ? 'pointer-events-none opacity-50'
+                                : undefined
+                        }
+                        aria-disabled={workspaceDisabled || undefined}
+                    >
                         <SidebarGroupLabel
-                            render={<Link href="/dashboard">Workspace</Link>}
+                            render={
+                                workspaceDisabled ? (
+                                    <span
+                                        title="Pick a tenant to enable the workspace"
+                                        aria-disabled
+                                    >
+                                        Workspace
+                                    </span>
+                                ) : (
+                                    <Link href="/dashboard">Workspace</Link>
+                                )
+                            }
                         />
                         <SidebarGroupContent>
                             <SidebarMenu>
@@ -248,15 +271,30 @@ export function AppSidebar({
                                         <SidebarMenuItem key={item.href}>
                                             <SidebarMenuButton
                                                 tooltip={item.label}
-                                                isActive={isActive(
-                                                    pathname,
-                                                    item,
-                                                )}
+                                                isActive={
+                                                    !workspaceDisabled &&
+                                                    isActive(pathname, item)
+                                                }
+                                                aria-disabled={
+                                                    workspaceDisabled ||
+                                                    undefined
+                                                }
                                                 render={
-                                                    <Link href={item.href}>
-                                                        <Icon />
-                                                        <span>{item.label}</span>
-                                                    </Link>
+                                                    workspaceDisabled ? (
+                                                        <span tabIndex={-1}>
+                                                            <Icon />
+                                                            <span>
+                                                                {item.label}
+                                                            </span>
+                                                        </span>
+                                                    ) : (
+                                                        <Link href={item.href}>
+                                                            <Icon />
+                                                            <span>
+                                                                {item.label}
+                                                            </span>
+                                                        </Link>
+                                                    )
                                                 }
                                             />
                                         </SidebarMenuItem>
