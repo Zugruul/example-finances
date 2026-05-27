@@ -29,3 +29,10 @@ export {
     type UserByIdDoc,
     type UsersByIdListenEvents,
 } from './users-by-id.readmodel';
+export {
+    userSettingsAuditApply,
+    userSettingsAuditKey,
+    userSettingsAuditListen,
+    type UserSettingsAuditDoc,
+    type UserSettingsAuditListenEvents,
+} from './user-settings-audit.readmodel';

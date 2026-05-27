@@ -1,4 +1,6 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { ScrollTextIcon } from 'lucide-react';
 import { auth } from '@/auth';
 import { readModels } from '@/sorc';
 import { updateDefaultCurrencyAction } from '@/server/users';
@@ -48,6 +50,17 @@ export default async function SettingsPage() {
                 <p className="text-sm text-muted-foreground">
                     Personal preferences applied across your tenants.
                 </p>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    render={
+                        <Link href="/settings/audit">
+                            <ScrollTextIcon className="size-4" />
+                            View settings audit
+                        </Link>
+                    }
+                />
             </div>
 
             <Card>

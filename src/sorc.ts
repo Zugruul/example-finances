@@ -92,6 +92,12 @@ import {
     type UserByIdDoc,
 } from '@/domains/users/users-by-id.readmodel';
 import {
+    userSettingsAuditApply,
+    userSettingsAuditKey,
+    userSettingsAuditListen,
+    type UserSettingsAuditDoc,
+} from '@/domains/users/user-settings-audit.readmodel';
+import {
     accountEvents,
     accountReducer,
     accountCommands,
@@ -456,6 +462,23 @@ function buildReadModels(
         },
     );
 
+    const userSettingsAudit = new SorcReadModel<
+        UserSettingsAuditDoc,
+        any,
+        any,
+        typeof sorc
+    >(sorc, {
+        name: 'user-settings-audit',
+        storeName: 'mongostore',
+        events: userSettingsAuditListen as never,
+        store: makeStore<UserSettingsAuditDoc>(client, 'rm_user_settings_audit', [
+            { key: { eventId: 1 }, options: { unique: true } },
+            { key: { userId: 1, occurredAt: -1 } },
+        ]),
+        key: userSettingsAuditKey as never,
+        apply: userSettingsAuditApply as never,
+    });
+
     const accountsByTenant = new SorcReadModel<
         AccountDoc,
         any,
@@ -592,6 +615,7 @@ function buildReadModels(
         platformRoles,
         activity,
         usersById,
+        userSettingsAudit,
         accountsByTenant,
         accountBalance,
         categoriesByTenant,
@@ -626,6 +650,7 @@ if (!cache) {
     void readModels.platformRoles.subscribe();
     void readModels.activity.subscribe();
     void readModels.usersById.subscribe();
+    void readModels.userSettingsAudit.subscribe();
     void readModels.accountsByTenant.subscribe();
     void readModels.accountBalance.subscribe();
     void readModels.categoriesByTenant.subscribe();
