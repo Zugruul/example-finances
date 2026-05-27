@@ -127,6 +127,7 @@ export const budgetCommands = {
             BudgetUpdatedEvent,
             {
                 budgetId: state.budgetId,
+                categoryId: state.categoryId,
                 monthlyAmount: cmd.monthlyAmount,
                 rolloverPolicy: cmd.rolloverPolicy,
                 updatedByUserId: cmd.updatedByUserId,
@@ -147,6 +148,7 @@ export const budgetCommands = {
             BudgetArchivedEvent,
             {
                 budgetId: state.budgetId,
+                categoryId: state.categoryId,
                 archivedByUserId: cmd.archivedByUserId,
                 archivedAt: new Date(),
             } as InstanceType<typeof BudgetArchivedEvent>['payload'],

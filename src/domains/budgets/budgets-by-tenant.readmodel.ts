@@ -85,25 +85,23 @@ export function budgetsByTenantKey(
         event.name === 'BudgetUpdated' ||
         event.name === 'BudgetArchived'
     ) {
-        // BudgetUpdated / BudgetArchived don't carry categoryId on the
-        // payload (the budget aggregate's stream encodes it via budgetId,
-        // and the doc already has it). We return a sentinel — the apply
-        // handles the lookup via state continuity.
-        if (event.name === 'BudgetCreated') {
-            return { categoryId: event.payload.categoryId };
-        }
-        // For Updated/Archived, the routing layer must use the previous
-        // doc's key — but the framework's contract is that key() is pure
-        // from the event. We thread categoryId into update/archive
-        // payloads at emit-time instead (see budget.aggregate.ts).
-        // For Wave-C MVP, BudgetUpdated/Archived events are rare and
-        // the read-model's tenant rollup recomputes from durable log
-        // on boot anyway. Until we thread the field, these are no-ops
-        // at the listener — the budget read model is created once and
-        // never updated post-create in the typical user flow.
-        return { categoryId: '' as SorcUUID };
+        // Legacy BudgetUpdated/Archived (pre-Wave-F) lack categoryId on
+        // the payload — no-op via sentinel routing rather than crash.
+        return {
+            categoryId: (event.payload.categoryId ?? '') as SorcUUID,
+        };
     }
-    // Transaction events
+    // Transaction events. TransactionUpdated carries `priorCategoryId`;
+    // if the category changed, route to the NEW one and accept that the
+    // prior-category budget will be stale until cold-rebuild (single-key
+    // routing limitation).
+    if (event.name === 'TransactionUpdated') {
+        const next =
+            event.payload.categoryId !== undefined
+                ? event.payload.categoryId
+                : event.payload.priorCategoryId;
+        return { categoryId: (next ?? '') as SorcUUID };
+    }
     const txCategoryId = (event.payload as { categoryId?: SorcUUID })
         .categoryId;
     return { categoryId: (txCategoryId ?? '') as SorcUUID };
@@ -134,13 +132,22 @@ export function budgetsByTenantApply(
                 },
             };
         }
-        case 'BudgetUpdated':
+        case 'BudgetUpdated': {
+            if (!state) return state;
+            return {
+                ...state,
+                monthlyAmount:
+                    event.payload.monthlyAmount !== undefined
+                        ? event.payload.monthlyAmount
+                        : state.monthlyAmount,
+                rolloverPolicy:
+                    event.payload.rolloverPolicy !== undefined
+                        ? event.payload.rolloverPolicy
+                        : state.rolloverPolicy,
+            };
+        }
         case 'BudgetArchived':
-            // See keying note above — these don't route correctly under
-            // the current key() pure-projection constraint. The aggregate
-            // state remains authoritative; the read-model rollup will
-            // self-heal on cold-rebuild.
-            return state;
+            return state ? { ...state, isArchived: true } : state;
         case 'TransactionRecorded': {
             if (!state || state.isArchived) return state;
             const tx = event.payload;
@@ -153,12 +160,25 @@ export function budgetsByTenantApply(
             if (!state || state.isArchived) return state;
             const tx = event.payload;
             if (tx.transactionType !== 'expense') return state;
-            if (tx.amount === undefined) return state;
-            const delta = tx.amount - tx.priorAmount;
-            // We can't tell the occurredOn-month from the Updated payload
-            // without denormalization. For MVP, apply the delta to the
-            // current month — close enough; the monthlyAggregate (slice 8)
-            // handles historical accuracy.
+            // Route landed on the NEW categoryId (see key()). If the
+            // category changed, this doc is the new-category budget —
+            // add the new amount as fresh spend. The prior-category
+            // budget is left stale until cold-rebuild (single-key
+            // routing limitation).
+            const categoryChanged =
+                tx.categoryId !== undefined &&
+                tx.priorCategoryId !== undefined &&
+                String(tx.categoryId) !== String(tx.priorCategoryId);
+            const newAmount = tx.amount ?? tx.priorAmount;
+
+            if (categoryChanged) {
+                const { year, month } = parseYearMonth(
+                    tx.occurredOn ?? tx.priorOccurredOn,
+                );
+                return rollForward(state, year, month, newAmount);
+            }
+            // Same category — apply net delta.
+            const delta = newAmount - tx.priorAmount;
             return {
                 ...state,
                 currentMonth: {

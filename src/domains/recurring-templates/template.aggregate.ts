@@ -31,6 +31,26 @@ export type TemplateEvent = InstanceType<
     | typeof TemplateMaterializedEvent
 >;
 
+/**
+ * Tolerate both shapes during the Wave-F migration:
+ *   - legacy events (pre-`type: 'object'`): cadence stored as JSON string
+ *   - new events: cadence stored as a Cadence object
+ *
+ * Safe fallback for malformed/empty legacy strings: daily cadence (the
+ * least-bad guess for a template that exists with broken data).
+ */
+function readCadence(value: unknown): Cadence {
+    if (typeof value === 'string') {
+        if (!value.trim()) return { kind: 'daily' };
+        try {
+            return JSON.parse(value) as Cadence;
+        } catch {
+            return { kind: 'daily' };
+        }
+    }
+    return value as Cadence;
+}
+
 export function templateReducer(
     state: TemplateState,
     event: TemplateEvent,
@@ -45,7 +65,7 @@ export function templateReducer(
                 amount: event.payload.amount,
                 description: event.payload.description,
                 transactionType: event.payload.transactionType,
-                cadence: JSON.parse(event.payload.cadence) as Cadence,
+                cadence: readCadence(event.payload.cadence),
                 startsOn: event.payload.startsOn,
                 endsOn: event.payload.endsOn,
                 isArchived: false,
@@ -62,9 +82,10 @@ export function templateReducer(
                     event.payload.description !== undefined
                         ? event.payload.description
                         : state.description,
-                cadence: event.payload.cadence
-                    ? (JSON.parse(event.payload.cadence) as Cadence)
-                    : state.cadence,
+                cadence:
+                    event.payload.cadence !== undefined
+                        ? readCadence(event.payload.cadence)
+                        : state.cadence,
                 endsOn:
                     event.payload.endsOn !== undefined
                         ? event.payload.endsOn
@@ -135,7 +156,7 @@ export const templateCommands = {
                 amount: cmd.amount,
                 description: cmd.description,
                 transactionType: cmd.transactionType,
-                cadence: JSON.stringify(cmd.cadence),
+                cadence: cmd.cadence,
                 startsOn: cmd.startsOn,
                 endsOn: cmd.endsOn,
                 createdByUserId: cmd.createdByUserId,
@@ -161,9 +182,7 @@ export const templateCommands = {
                 templateId: state.templateId,
                 amount: cmd.amount,
                 description: cmd.description,
-                cadence: cmd.cadence
-                    ? JSON.stringify(cmd.cadence)
-                    : undefined,
+                cadence: cmd.cadence,
                 endsOn: cmd.endsOn,
                 updatedByUserId: cmd.updatedByUserId,
                 updatedAt: new Date(),

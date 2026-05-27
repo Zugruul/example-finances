@@ -49,12 +49,12 @@ export class TemplateCreatedPayload extends SorcPayload {
     transactionType!: TemplateType;
 
     /**
-     * Discriminated-union cadence as a JSON string on the wire. The
-     * framework's `@property` decorator doesn't model 'object' types; we
-     * encode at the aggregate boundary and decode on read.
+     * Discriminated-union cadence as a structured object. Uses
+     * `type: 'object'` (Wave-F framework addition) — the decorator
+     * preserves the value as-is on the wire; no JSON-string trampoline.
      */
-    @property({ type: 'string', required: true })
-    cadence!: string;
+    @property({ type: 'object', required: true })
+    cadence!: Cadence;
 
     @property({ type: 'string', required: true })
     startsOn!: string;
@@ -81,8 +81,8 @@ export class TemplateUpdatedPayload extends SorcPayload {
     @property({ type: 'string', tags: ['pii'] })
     description?: string;
 
-    @property({ type: 'string' })
-    cadence?: string;
+    @property({ type: 'object' })
+    cadence?: Cadence;
 
     @property({ type: 'string' })
     endsOn?: string;

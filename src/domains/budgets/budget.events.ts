@@ -51,6 +51,16 @@ export class BudgetUpdatedPayload extends SorcPayload {
     @property({ type: 'uuid', required: true })
     budgetId!: SorcUUID;
 
+    /**
+     * Denormalized from the budget aggregate's state at emit-time. The
+     * `budgetsByTenant` read model keys per-doc by categoryId (one
+     * active budget per (tenant, category)); without this field, the
+     * framework's pure-from-event `key()` can't route to the right doc.
+     */
+    @foreign('categories')
+    @property({ type: 'uuid', required: true })
+    categoryId!: SorcUUID;
+
     @property({ type: 'number' })
     monthlyAmount?: number;
 
@@ -69,6 +79,11 @@ export class BudgetUpdatedPayload extends SorcPayload {
 export class BudgetArchivedPayload extends SorcPayload {
     @property({ type: 'uuid', required: true })
     budgetId!: SorcUUID;
+
+    /** Denormalized — see BudgetUpdatedPayload.categoryId. */
+    @foreign('categories')
+    @property({ type: 'uuid', required: true })
+    categoryId!: SorcUUID;
 
     @foreign('users')
     @property({ type: 'uuid', required: true })

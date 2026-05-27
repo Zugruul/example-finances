@@ -110,6 +110,15 @@ export class TransactionUpdatedPayload extends SorcPayload {
     accountId!: SorcUUID;
 
     /**
+     * Denormalized tenantId so per-tenant read models
+     * (`monthlyAggregate`, `budgetsByTenant`) can route directly off the
+     * payload without a transactionId → tenant lookup.
+     */
+    @foreign('tenants')
+    @property({ type: 'uuid', required: true })
+    tenantId!: SorcUUID;
+
+    /**
      * Denormalized transactionType from the recorded leg. Lets
      * balance/aggregate consumers compute deltas without a prior-state
      * lookup at apply-time.
@@ -124,6 +133,23 @@ export class TransactionUpdatedPayload extends SorcPayload {
      */
     @property({ type: 'number', required: true })
     priorAmount!: number;
+
+    /**
+     * Prior occurredOn (the month bucket this txn was in before update).
+     * Required so `monthlyAggregate` can route to the right per-month
+     * doc even when the update doesn't change `occurredOn`.
+     */
+    @property({ type: 'string', required: true })
+    priorOccurredOn!: string;
+
+    /**
+     * Prior categoryId (may be undefined if the txn was previously
+     * uncategorized). Lets `budgetsByTenant` route to the prior bucket
+     * for delta math.
+     */
+    @foreign('categories')
+    @property({ type: 'uuid' })
+    priorCategoryId?: SorcUUID;
 
     @foreign('categories')
     @property({ type: 'uuid' })
@@ -156,6 +182,11 @@ export class TransactionDeletedPayload extends SorcPayload {
     @property({ type: 'uuid', required: true })
     accountId!: SorcUUID;
 
+    /** Denormalized — see TransactionUpdatedPayload.tenantId. */
+    @foreign('tenants')
+    @property({ type: 'uuid', required: true })
+    tenantId!: SorcUUID;
+
     /** Denormalized transactionType (for delta sign at delete-time). */
     @property({ type: 'string', required: true })
     transactionType!: TransactionType;
@@ -163,6 +194,21 @@ export class TransactionDeletedPayload extends SorcPayload {
     /** Amount being reversed (so listeners can subtract without prior state). */
     @property({ type: 'number', required: true })
     amount!: number;
+
+    /**
+     * Denormalized occurredOn so `monthlyAggregate` can subtract from
+     * the right per-month bucket without a transactionId lookup.
+     */
+    @property({ type: 'string', required: true })
+    occurredOn!: string;
+
+    /**
+     * Denormalized categoryId (may be undefined if uncategorized).
+     * Lets `budgetsByTenant` decrement the right per-category bucket.
+     */
+    @foreign('categories')
+    @property({ type: 'uuid' })
+    categoryId?: SorcUUID;
 
     /** For transfer-leg deletes: which side this leg was. */
     @property({ type: 'string' })

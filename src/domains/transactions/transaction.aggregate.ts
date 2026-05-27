@@ -169,8 +169,11 @@ export const transactionCommands = {
             {
                 transactionId: state.transactionId,
                 accountId: state.accountId,
+                tenantId: state.tenantId,
                 transactionType: state.transactionType,
                 priorAmount: state.amount,
+                priorOccurredOn: state.occurredOn,
+                priorCategoryId: state.categoryId,
                 categoryId: cmd.categoryId,
                 amount: cmd.amount,
                 occurredOn: cmd.occurredOn,
@@ -194,8 +197,11 @@ export const transactionCommands = {
             {
                 transactionId: state.transactionId,
                 accountId: state.accountId,
+                tenantId: state.tenantId,
                 transactionType: state.transactionType,
                 amount: state.amount,
+                occurredOn: state.occurredOn,
+                categoryId: state.categoryId,
                 transferDirection: state.transferDirection,
                 deletedByUserId: cmd.deletedByUserId,
                 deletedAt: new Date(),

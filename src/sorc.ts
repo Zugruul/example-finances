@@ -170,11 +170,12 @@ function buildSorc(metrics: ReturnType<typeof metricsPrometheus>) {
     type AnyEventClass = new (...args: any[]) => ISorcEvent<DefaultISorcEvent>;
 
     // Single shared MongoClient — same pool used by Auth.js and the read
-    // models. The URI is rewritten to carry `/finances` as the default DB
-    // (see `src/lib/mongo.ts`), so engine-mongo's `client.db()` resolves to
-    // the consolidated `finances` database.
+    // models. We pass `dbName: 'finances'` explicitly so engine-mongo
+    // targets the consolidated DB regardless of what's encoded in the
+    // connection URI.
     const mongostore = createMongoStore({
         createClient: () => getSharedMongoClient() as never,
+        dbName: FINANCES_DB,
         names: {
             getEventStoreCompendiumCollectionName: () => 'events_compendium',
             getEventStoreCollectionName: () => 'events',

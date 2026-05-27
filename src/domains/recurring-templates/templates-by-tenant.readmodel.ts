@@ -8,6 +8,19 @@ import {
     type Cadence,
 } from './template.events';
 
+/** Tolerate legacy JSON-string cadence alongside the new object shape. */
+function readCadence(value: unknown): Cadence {
+    if (typeof value === 'string') {
+        if (!value.trim()) return { kind: 'daily' };
+        try {
+            return JSON.parse(value) as Cadence;
+        } catch {
+            return { kind: 'daily' };
+        }
+    }
+    return value as Cadence;
+}
+
 export type RecurringTemplateDoc = {
     templateId: SorcUUID;
     tenantId: SorcUUID;
@@ -61,7 +74,7 @@ export function recurringTemplatesApply(
                 amount: event.payload.amount,
                 description: event.payload.description,
                 transactionType: event.payload.transactionType,
-                cadence: JSON.parse(event.payload.cadence) as Cadence,
+                cadence: readCadence(event.payload.cadence),
                 startsOn: event.payload.startsOn,
                 endsOn: event.payload.endsOn,
                 isArchived: false,
@@ -78,9 +91,10 @@ export function recurringTemplatesApply(
                     event.payload.description !== undefined
                         ? event.payload.description
                         : state.description,
-                cadence: event.payload.cadence
-                    ? (JSON.parse(event.payload.cadence) as Cadence)
-                    : state.cadence,
+                cadence:
+                    event.payload.cadence !== undefined
+                        ? readCadence(event.payload.cadence)
+                        : state.cadence,
                 endsOn:
                     event.payload.endsOn !== undefined
                         ? event.payload.endsOn
