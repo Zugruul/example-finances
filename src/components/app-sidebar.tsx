@@ -99,6 +99,12 @@ function tenantNavItems(tenantId: string): NavItem[] {
             icon: UsersIcon,
             matchPrefix: `/tenants/${tenantId}/members`,
         },
+        {
+            label: 'Audit',
+            href: `/tenants/${tenantId}/audit`,
+            icon: ScrollTextIcon,
+            matchPrefix: `/tenants/${tenantId}/audit`,
+        },
     ];
 }
 
