@@ -125,6 +125,26 @@ export class TemplateMaterializedPayload extends SorcPayload {
 }
 
 @domain('recurring-templates')
+export class TemplateOccurrenceSkippedPayload extends SorcPayload {
+    @property({ type: 'uuid', required: true })
+    templateId!: SorcUUID;
+
+    /** The due date the user explicitly chose NOT to materialize. */
+    @property({ type: 'string', required: true })
+    skippedOn!: string;
+
+    @property({ type: 'string' })
+    reason?: string;
+
+    @foreign('users')
+    @property({ type: 'uuid', required: true })
+    skippedByUserId!: SorcUUID;
+
+    @property({ type: 'date', required: true })
+    skippedAt!: Date;
+}
+
+@domain('recurring-templates')
 export class TemplateCreatedEvent extends SorcBaseEvent {
     readonly name = 'TemplateCreated' as const;
     readonly version = '2026-05-26' as const;
@@ -180,9 +200,24 @@ export class TemplateMaterializedEvent extends SorcBaseEvent {
     }
 }
 
+@domain('recurring-templates')
+export class TemplateOccurrenceSkippedEvent extends SorcBaseEvent {
+    readonly name = 'TemplateOccurrenceSkipped' as const;
+    readonly version = '2026-05-27' as const;
+    publishedAt: Date | null = null;
+    revision: bigint | null = null;
+    constructor(
+        public stream: TemplateStreamInstance,
+        public payload: TemplateOccurrenceSkippedPayload,
+    ) {
+        super();
+    }
+}
+
 export const templateEvents = [
     TemplateCreatedEvent,
     TemplateUpdatedEvent,
     TemplateArchivedEvent,
     TemplateMaterializedEvent,
+    TemplateOccurrenceSkippedEvent,
 ] as const;

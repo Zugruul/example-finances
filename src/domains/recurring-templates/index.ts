@@ -3,6 +3,7 @@ export {
     TemplateUpdatedEvent,
     TemplateArchivedEvent,
     TemplateMaterializedEvent,
+    TemplateOccurrenceSkippedEvent,
     templateEvents,
     type TemplateStreamInstance,
     type TemplateStreamPattern,
@@ -17,6 +18,7 @@ export {
     type UpdateTemplateCmd,
     type ArchiveTemplateCmd,
     type MaterializeTemplateCmd,
+    type SkipTemplateOccurrenceCmd,
 } from './template.aggregate';
 export {
     recurringTemplatesApply,

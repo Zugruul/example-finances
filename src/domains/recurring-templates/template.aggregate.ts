@@ -4,6 +4,7 @@ import {
     TemplateUpdatedEvent,
     TemplateArchivedEvent,
     TemplateMaterializedEvent,
+    TemplateOccurrenceSkippedEvent,
     type TemplateStreamInstance,
     type TemplateType,
     type Cadence,
@@ -29,6 +30,7 @@ export type TemplateEvent = InstanceType<
     | typeof TemplateUpdatedEvent
     | typeof TemplateArchivedEvent
     | typeof TemplateMaterializedEvent
+    | typeof TemplateOccurrenceSkippedEvent
 >;
 
 /**
@@ -97,6 +99,13 @@ export function templateReducer(
             return state
                 ? { ...state, lastMaterializedOn: event.payload.materializedOn }
                 : state;
+        case 'TemplateOccurrenceSkipped':
+            // Skipping treats the skipped date as "consumed" so the same
+            // occurrence doesn't keep showing up as due. Advance the
+            // cursor exactly like a materialize would.
+            return state
+                ? { ...state, lastMaterializedOn: event.payload.skippedOn }
+                : state;
         default:
             return state;
     }
@@ -134,6 +143,13 @@ export type ArchiveTemplateCmd = {
 export type MaterializeTemplateCmd = {
     materializedOn: string;
     transactionId: SorcUUID;
+    stream: TemplateStreamInstance;
+};
+
+export type SkipTemplateOccurrenceCmd = {
+    skippedOn: string;
+    reason?: string;
+    skippedByUserId: SorcUUID;
     stream: TemplateStreamInstance;
 };
 
@@ -233,6 +249,36 @@ export const templateCommands = {
                 transactionId: cmd.transactionId,
                 materializedAt: new Date(),
             } as InstanceType<typeof TemplateMaterializedEvent>['payload'],
+            { stream: cmd.stream },
+        );
+    },
+
+    skipTemplateOccurrence(
+        state: TemplateState,
+        cmd: SkipTemplateOccurrenceCmd,
+        ctx?: CommandContext,
+    ): void {
+        if (!state) throw new Error('Template does not exist');
+        if (state.isArchived) throw new Error('Template is archived');
+        if (
+            state.lastMaterializedOn &&
+            state.lastMaterializedOn >= cmd.skippedOn
+        ) {
+            throw new Error(
+                `Template already materialized through ${state.lastMaterializedOn}`,
+            );
+        }
+        ctx!.emit(
+            TemplateOccurrenceSkippedEvent,
+            {
+                templateId: state.templateId,
+                skippedOn: cmd.skippedOn,
+                reason: cmd.reason,
+                skippedByUserId: cmd.skippedByUserId,
+                skippedAt: new Date(),
+            } as InstanceType<
+                typeof TemplateOccurrenceSkippedEvent
+            >['payload'],
             { stream: cmd.stream },
         );
     },
