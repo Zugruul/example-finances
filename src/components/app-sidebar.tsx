@@ -61,8 +61,9 @@ function tenantNavItems(tenantId: string): NavItem[] {
     return [
         {
             label: 'Dashboard',
-            href: `/tenants/${tenantId}`,
+            href: `/tenants/${tenantId}/dashboard`,
             icon: LayoutDashboardIcon,
+            matchPrefix: `/tenants/${tenantId}/dashboard`,
         },
         {
             label: 'Accounts',
@@ -105,6 +106,13 @@ function tenantNavItems(tenantId: string): NavItem[] {
             href: `/tenants/${tenantId}/audit`,
             icon: ScrollTextIcon,
             matchPrefix: `/tenants/${tenantId}/audit`,
+        },
+        {
+            label: 'Options',
+            href: `/tenants/${tenantId}`,
+            icon: SettingsIcon,
+            // Exact match only — the dashboard / accounts / etc. all
+            // share the `/tenants/${tenantId}` prefix.
         },
     ];
 }
@@ -179,6 +187,23 @@ export function AppSidebar({
                         Finances
                     </Link>
                 </div>
+                {/* Top-level Dashboard — cross-tenant view (filterable by
+                    tenant via /dashboard's own dropdown). Sits above the
+                    Tenants group; not part of any tenant's workspace. */}
+                <SidebarMenu>
+                    <SidebarMenuItem>
+                        <SidebarMenuButton
+                            tooltip="Dashboard"
+                            isActive={pathname === '/dashboard'}
+                            render={
+                                <Link href="/dashboard">
+                                    <LayoutDashboardIcon />
+                                    <span>Dashboard</span>
+                                </Link>
+                            }
+                        />
+                    </SidebarMenuItem>
+                </SidebarMenu>
                 <SidebarGroup className="group-data-[collapsible=icon]:hidden">
                     <SidebarGroupLabel
                         render={<Link href="/tenants">Tenants</Link>}
