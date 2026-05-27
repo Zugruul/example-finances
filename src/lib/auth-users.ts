@@ -1,4 +1,4 @@
-import { MongoClient } from 'mongodb';
+import { FINANCES_DB, getSharedMongoClientPromise } from '@/lib/mongo';
 
 export type AuthUser = {
     _id: string;
@@ -8,31 +8,18 @@ export type AuthUser = {
     emailVerified?: Date;
 };
 
-const globalForMongo = globalThis as unknown as {
-    __financesAuthUsersClient?: Promise<MongoClient>;
-};
-
-function getClient(): Promise<MongoClient> {
-    if (!globalForMongo.__financesAuthUsersClient) {
-        const uri =
-            process.env.AUTH_MONGO_URI ??
-            'mongodb://localhost:27020,localhost:27021,localhost:27022/?replicaSet=rs0';
-        globalForMongo.__financesAuthUsersClient = new MongoClient(uri).connect();
-    }
-    return globalForMongo.__financesAuthUsersClient;
-}
-
 /**
- * Reads users directly from the Auth.js MongoDB adapter's `users`
- * collection. Admin-only — exposes raw email/name PII. Wave A: paged
- * scan; Wave B can swap to an aggregation pipeline if the user base
- * grows.
+ * Reads users directly from the Auth.js MongoDB adapter's `auth_users`
+ * collection (renamed from the default `users` in F.C.consolidate-db so
+ * Auth.js, the event store, and the read models can share a single
+ * `finances` database without colliding). Admin-only — exposes raw
+ * email/name PII.
  */
 export async function listAuthUsers(limit = 100): Promise<AuthUser[]> {
-    const client = await getClient();
-    const db = client.db('finances_auth');
+    const client = await getSharedMongoClientPromise();
+    const db = client.db(FINANCES_DB);
     const cursor = db
-        .collection<AuthUser>('users')
+        .collection<AuthUser>('auth_users')
         .find({}, { limit, sort: { _id: -1 } });
     return cursor.toArray();
 }

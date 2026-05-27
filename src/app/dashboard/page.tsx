@@ -10,8 +10,11 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
-
+import { formatMoney } from '@/lib/money';
+import { nextDueOn } from '@/domains/recurring-templates';
+import { materializeDueTemplates } from '@/lib/recurring-materialize';
 import type { ActivityDoc } from '@/domains/activity';
+import type { SorcUUID } from '@event-sorcerer/core';
 
 const TENANT_GRID_LIMIT = 6;
 const RECENT_ACTIVITY_LIMIT = 10;
@@ -60,10 +63,19 @@ function StatTile({
 function daysSince(date: Date): number {
     return Math.max(
         1,
-        Math.floor(
-            (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24),
-        ),
+        Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24)),
     );
+}
+
+function currentYearMonth(): { year: number; month: number; key: string } {
+    const now = new Date();
+    const year = now.getUTCFullYear();
+    const month = now.getUTCMonth() + 1;
+    return {
+        year,
+        month,
+        key: `${year}-${String(month).padStart(2, '0')}`,
+    };
 }
 
 const roleVariant: Record<
@@ -82,7 +94,7 @@ export default async function DashboardPage() {
         redirect('/auth/signin?callbackUrl=/dashboard');
     }
 
-    const userId = session.user.id;
+    const userId = session.user.id as SorcUUID;
     const email = session.user.email ?? '';
 
     const [allMemberships, invitationsByEmail] = await Promise.all([
@@ -110,7 +122,6 @@ export default async function DashboardPage() {
     const activeTenants = tenantCards.filter(
         ({ tenant }) => !tenant.archivedAt,
     );
-
     const tenantsById = new Map<
         string,
         (typeof tenantCards)[number]['tenant']
@@ -133,17 +144,117 @@ export default async function DashboardPage() {
         if (t) tenantsById.set(String(t.tenantId), t);
     }
 
-    // Recent activity comes from the dedicated cross-domain `activity`
-    // read model (one doc per published event). Filter to events scoped to
-    // tenants the user belongs to.
-    const myTenantIds = new Set(
-        activeTenants.map(({ tenant }) => String(tenant.tenantId)),
+    const myTenantIds = activeTenants.map(({ tenant }) =>
+        String(tenant.tenantId),
     );
+    const myTenantIdSet = new Set(myTenantIds);
+
+    // Fire-and-forget materialize for each tenant the user belongs to.
+    // Errors are swallowed inside the helper.
+    for (const tid of myTenantIds) {
+        try {
+            await materializeDueTemplates(tid, userId);
+        } catch (err) {
+            console.error('[dashboard] materialize side-effect', { tid, err });
+        }
+    }
+
+    // ----- finance roll-ups -----
+
+    const accountBalances = (
+        await Promise.all(
+            myTenantIds.map((tid) =>
+                readModels.accountBalance.find({ tenantId: tid }),
+            ),
+        )
+    ).flat();
+
+    // Net worth grouped by currency (no FX).
+    const netWorthByCurrency = new Map<string, number>();
+    for (const b of accountBalances) {
+        netWorthByCurrency.set(
+            b.currency,
+            (netWorthByCurrency.get(b.currency) ?? 0) + b.balance,
+        );
+    }
+
+    // Pick a "current" tenant for this-month + spending — first one for now.
+    const currentTenantId = myTenantIds[0];
+    const { key: ymKey, year, month } = currentYearMonth();
+    const monthly = currentTenantId
+        ? (
+              await readModels.monthlyAggregate.find({
+                  aggregateKey: `${currentTenantId}:${ymKey}`,
+              })
+          )[0]
+        : undefined;
+
+    const categories = currentTenantId
+        ? await readModels.categoriesByTenant.find({
+              tenantId: currentTenantId,
+          })
+        : [];
+    const categoryById = new Map(
+        categories.map((c) => [String(c.categoryId), c]),
+    );
+
+    const topSpending = monthly
+        ? Object.entries(monthly.byCategory)
+              .map(([catId, v]) => ({
+                  categoryId: catId,
+                  name:
+                      catId === '__uncategorized'
+                          ? 'Uncategorized'
+                          : (categoryById.get(catId)?.name ?? 'Unknown'),
+                  expense: v.expense,
+              }))
+              .filter((row) => row.expense > 0)
+              .sort((a, b) => b.expense - a.expense)
+              .slice(0, 5)
+        : [];
+
+    const budgets = currentTenantId
+        ? (
+              await readModels.budgetsByTenant.find({
+                  tenantId: currentTenantId,
+              })
+          ).filter((b) => !b.isArchived)
+        : [];
+
+    const recurring = currentTenantId
+        ? (
+              await readModels.recurringTemplates.find({
+                  tenantId: currentTenantId,
+              })
+          )
+              .filter((t) => !t.isArchived)
+              .map((t) => ({
+                  ...t,
+                  next: nextDueOn(
+                      t.cadence,
+                      t.startsOn,
+                      t.lastMaterializedOn,
+                      t.endsOn,
+                  ),
+              }))
+              .filter((t) => t.next !== null)
+        : [];
+    const today = new Date().toISOString().slice(0, 10);
+    const sevenDays = new Date();
+    sevenDays.setUTCDate(sevenDays.getUTCDate() + 7);
+    const sevenDaysYmd = sevenDays.toISOString().slice(0, 10);
+    const upcomingRecurring = recurring
+        .filter((t) => t.next && t.next <= sevenDaysYmd && t.next >= today)
+        .sort((a, b) => (a.next! < b.next! ? -1 : 1))
+        .slice(0, 5);
+
+    const monthlyCurrency =
+        budgets[0]?.currency ?? accountBalances[0]?.currency ?? 'USD';
+
+    // ----- existing activity feed -----
     const allActivity = (await readModels.activity.find({})) as ActivityDoc[];
     const recentActivity = allActivity
-        .filter(
-            (a) => !a.tenantId || myTenantIds.has(String(a.tenantId)),
-        )
+        .filter((a) => !a.tenantId || myTenantIdSet.has(String(a.tenantId)))
         .sort(
             (a, b) =>
                 new Date(b.occurredAt).getTime() -
@@ -168,10 +279,8 @@ export default async function DashboardPage() {
         : 'No accepted memberships yet';
 
     const tenureLabel = oldestJoin ? `${daysSince(oldestJoin)}d` : '—';
-
     const isAdmin = session.user.isAdmin === true;
-    const greetingName =
-        session.user.name ?? session.user.email ?? 'there';
+    const greetingName = session.user.name ?? session.user.email ?? 'there';
     const sortedTenants = [...activeTenants].sort((a, b) => {
         const at = new Date(a.tenant.createdAt).getTime();
         const bt = new Date(b.tenant.createdAt).getTime();
@@ -179,6 +288,9 @@ export default async function DashboardPage() {
     });
     const visibleTenants = sortedTenants.slice(0, TENANT_GRID_LIMIT);
     const overflowCount = sortedTenants.length - visibleTenants.length;
+    const currentTenant = currentTenantId
+        ? tenantsById.get(currentTenantId)
+        : undefined;
 
     return (
         <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 p-6 md:p-8">
@@ -196,6 +308,238 @@ export default async function DashboardPage() {
                           }.`}
                 </p>
             </header>
+
+            {activeTenants.length > 0 ? (
+                <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-sm font-medium text-muted-foreground">
+                                Net worth
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="flex flex-col gap-2">
+                            {netWorthByCurrency.size === 0 ? (
+                                <p className="text-sm text-muted-foreground">
+                                    No accounts yet.
+                                </p>
+                            ) : (
+                                Array.from(netWorthByCurrency.entries()).map(
+                                    ([currency, total]) => (
+                                        <div
+                                            key={currency}
+                                            className="flex items-baseline justify-between"
+                                        >
+                                            <span className="text-xs text-muted-foreground">
+                                                {currency}
+                                            </span>
+                                            <span className="font-mono text-2xl tabular-nums">
+                                                {formatMoney(total, currency)}
+                                            </span>
+                                        </div>
+                                    ),
+                                )
+                            )}
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-sm font-medium text-muted-foreground">
+                                This month
+                                {currentTenant ? (
+                                    <span className="ml-2 font-normal">
+                                        ·{' '}
+                                        <Link
+                                            href={`/tenants/${currentTenantId}`}
+                                            className="hover:underline"
+                                        >
+                                            {currentTenant.displayName}
+                                        </Link>
+                                    </span>
+                                ) : null}
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="grid grid-cols-3 gap-3 text-sm">
+                                <div className="flex flex-col">
+                                    <span className="text-xs text-muted-foreground">
+                                        Income
+                                    </span>
+                                    <span className="font-mono tabular-nums">
+                                        {formatMoney(
+                                            monthly?.income ?? 0,
+                                            monthlyCurrency,
+                                        )}
+                                    </span>
+                                </div>
+                                <div className="flex flex-col">
+                                    <span className="text-xs text-muted-foreground">
+                                        Expense
+                                    </span>
+                                    <span className="font-mono tabular-nums">
+                                        {formatMoney(
+                                            monthly?.expense ?? 0,
+                                            monthlyCurrency,
+                                        )}
+                                    </span>
+                                </div>
+                                <div className="flex flex-col">
+                                    <span className="text-xs text-muted-foreground">
+                                        Net
+                                    </span>
+                                    <span
+                                        className={`font-mono tabular-nums ${(monthly?.net ?? 0) < 0 ? 'text-destructive' : ''}`}
+                                    >
+                                        {formatMoney(
+                                            monthly?.net ?? 0,
+                                            monthlyCurrency,
+                                        )}
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="mt-2 text-xs text-muted-foreground">
+                                {year}-{String(month).padStart(2, '0')}
+                            </div>
+                        </CardContent>
+                    </Card>
+                </section>
+            ) : null}
+
+            {currentTenantId && topSpending.length > 0 ? (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Top spending categories</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <ul className="flex flex-col gap-1.5 text-sm">
+                            {topSpending.map((row) => (
+                                <li
+                                    key={row.categoryId}
+                                    className="flex items-center justify-between"
+                                >
+                                    <span>{row.name}</span>
+                                    <span className="font-mono tabular-nums">
+                                        {formatMoney(
+                                            row.expense,
+                                            monthlyCurrency,
+                                        )}
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    </CardContent>
+                </Card>
+            ) : null}
+
+            {currentTenantId && budgets.length > 0 ? (
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-baseline justify-between gap-2">
+                            <span>Budgets</span>
+                            <Link
+                                href={`/tenants/${currentTenantId}/budgets`}
+                                className="text-xs font-normal text-muted-foreground hover:underline"
+                            >
+                                All
+                            </Link>
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <ul className="flex flex-col gap-2 text-sm">
+                            {budgets.slice(0, 5).map((b) => {
+                                const cat = categoryById.get(
+                                    String(b.categoryId),
+                                );
+                                const effective =
+                                    b.monthlyAmount +
+                                    b.currentMonth.rolloverBalance;
+                                const pct =
+                                    effective === 0
+                                        ? 0
+                                        : Math.min(
+                                              100,
+                                              (b.currentMonth.spent /
+                                                  effective) *
+                                                  100,
+                                          );
+                                const over = b.currentMonth.spent > effective;
+                                return (
+                                    <li
+                                        key={String(b.budgetId)}
+                                        className="flex flex-col gap-1"
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <span>
+                                                {cat?.name ?? 'Unknown'}
+                                            </span>
+                                            <span className="font-mono tabular-nums">
+                                                {formatMoney(
+                                                    b.currentMonth.spent,
+                                                    b.currency,
+                                                )}{' '}
+                                                /{' '}
+                                                {formatMoney(
+                                                    effective,
+                                                    b.currency,
+                                                )}
+                                            </span>
+                                        </div>
+                                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                                            <div
+                                                className={
+                                                    over
+                                                        ? 'h-1.5 bg-destructive'
+                                                        : 'h-1.5 bg-primary'
+                                                }
+                                                style={{ width: `${pct}%` }}
+                                            />
+                                        </div>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    </CardContent>
+                </Card>
+            ) : null}
+
+            {currentTenantId && upcomingRecurring.length > 0 ? (
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-baseline justify-between gap-2">
+                            <span>Upcoming recurring (next 7 days)</span>
+                            <Link
+                                href={`/tenants/${currentTenantId}/recurring`}
+                                className="text-xs font-normal text-muted-foreground hover:underline"
+                            >
+                                All
+                            </Link>
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <ul className="flex flex-col gap-1.5 text-sm">
+                            {upcomingRecurring.map((t) => (
+                                <li
+                                    key={String(t.templateId)}
+                                    className="flex items-center justify-between"
+                                >
+                                    <span className="truncate">
+                                        {t.description ??
+                                            '(no description)'}{' '}
+                                        <Badge
+                                            variant="outline"
+                                            className="ml-2"
+                                        >
+                                            {t.transactionType}
+                                        </Badge>
+                                    </span>
+                                    <span className="font-mono text-xs">
+                                        {t.next}
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    </CardContent>
+                </Card>
+            ) : null}
 
             <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <StatTile
@@ -221,7 +565,9 @@ export default async function DashboardPage() {
                     </h2>
                     <ul className="flex flex-col gap-2">
                         {pendingInvitations.map((m) => {
-                            const tenant = tenantsById.get(String(m.tenantId));
+                            const tenant = tenantsById.get(
+                                String(m.tenantId),
+                            );
                             return (
                                 <li key={String(m.membershipId)}>
                                     <Card>
@@ -235,7 +581,9 @@ export default async function DashboardPage() {
                                                     Invited as{' '}
                                                     <Badge
                                                         variant={
-                                                            roleVariant[m.role]
+                                                            roleVariant[
+                                                                m.role
+                                                            ]
                                                         }
                                                         className="capitalize"
                                                     >
@@ -288,7 +636,9 @@ export default async function DashboardPage() {
             ) : (
                 <section className="flex flex-col gap-4">
                     <div className="flex items-center justify-between gap-2">
-                        <h2 className="text-lg font-medium">Your tenants</h2>
+                        <h2 className="text-lg font-medium">
+                            Your tenants
+                        </h2>
                         <div className="flex gap-2">
                             <Link href="/tenants">
                                 <Button variant="ghost" size="sm">
@@ -314,7 +664,9 @@ export default async function DashboardPage() {
                                             </CardTitle>
                                             <Badge
                                                 variant={
-                                                    roleVariant[membership.role]
+                                                    roleVariant[
+                                                        membership.role
+                                                    ]
                                                 }
                                             >
                                                 {membership.role}
@@ -372,8 +724,9 @@ export default async function DashboardPage() {
                             <ul className="divide-y">
                                 {recentActivity.map((row) => {
                                     const tenantName = row.tenantId
-                                        ? tenantsById.get(String(row.tenantId))
-                                              ?.displayName
+                                        ? tenantsById.get(
+                                              String(row.tenantId),
+                                          )?.displayName
                                         : undefined;
                                     const at = new Date(row.occurredAt);
                                     return (
@@ -397,7 +750,8 @@ export default async function DashboardPage() {
                                                         {row.summary}
                                                     </span>
                                                 </div>
-                                                {tenantName && row.tenantId ? (
+                                                {tenantName &&
+                                                row.tenantId ? (
                                                     <Link
                                                         href={`/tenants/${row.tenantId}`}
                                                         className="truncate text-xs text-muted-foreground hover:text-foreground"

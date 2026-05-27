@@ -1,7 +1,8 @@
 import type { MongoClient } from 'mongodb';
+import { FINANCES_DB } from '@/lib/mongo';
 
-export const FINANCES_AUTH_DB = 'finances_auth';
-export const SESSIONS_COLLECTION = 'sessions';
+export const FINANCES_AUTH_DB = FINANCES_DB;
+export const SESSIONS_COLLECTION = 'auth_sessions';
 
 /**
  * Hard cap on a single impersonation session. After this many ms since

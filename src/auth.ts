@@ -2,7 +2,7 @@ import NextAuth, { type NextAuthConfig } from 'next-auth';
 import GitHub from 'next-auth/providers/github';
 import Google from 'next-auth/providers/google';
 import { MongoDBAdapter } from '@auth/mongodb-adapter';
-import { MongoClient } from 'mongodb';
+import { FINANCES_DB, getSharedMongoClientPromise } from '@/lib/mongo';
 import { aggregates, readModels } from '@/sorc';
 import type {
     AdminActionsStreamInstance,
@@ -22,21 +22,10 @@ export const SESSION_TOKEN_COOKIE_NAME = isProd
     ? '__Host-finances.session-token'
     : 'finances.session-token';
 
-// Singleton Mongo client. The Auth.js adapter accepts a Promise<MongoClient>.
-const mongoUri =
-    process.env.AUTH_MONGO_URI ??
-    'mongodb://localhost:27020,localhost:27021,localhost:27022/?replicaSet=rs0';
-
-const globalForMongo = globalThis as unknown as {
-    __financesAuthMongo?: Promise<MongoClient>;
-};
-
-export const authMongoClientPromise =
-    globalForMongo.__financesAuthMongo ?? new MongoClient(mongoUri).connect();
-
-if (!isProd) {
-    globalForMongo.__financesAuthMongo = authMongoClientPromise;
-}
+// Auth.js shares the consolidated MongoClient with the event store and read
+// models — see `src/lib/mongo.ts`. Re-exported for callers that already used
+// `authMongoClientPromise` (impersonation helpers, lib/auth-users, etc.).
+export const authMongoClientPromise = getSharedMongoClientPromise();
 
 function platformRoleStream(userId: string): PlatformRoleStreamInstance {
     return `platform-role-${userId}` as PlatformRoleStreamInstance;
@@ -52,7 +41,13 @@ function adminActionsStream(adminId: string): AdminActionsStreamInstance {
 
 export const authConfig: NextAuthConfig = {
     adapter: MongoDBAdapter(authMongoClientPromise, {
-        databaseName: 'finances_auth',
+        databaseName: FINANCES_DB,
+        collections: {
+            Users: 'auth_users',
+            Accounts: 'auth_accounts',
+            Sessions: 'auth_sessions',
+            VerificationTokens: 'auth_verification_tokens',
+        },
     }),
     session: { strategy: 'database' },
     providers: [

@@ -8,6 +8,7 @@ import {
 import { AppShellUserMenu } from '@/components/app-shell-user-menu';
 import { AppShellMobileMenu } from '@/components/app-shell-mobile-menu';
 import { AppShellCommandPalette } from '@/components/app-shell-command-palette';
+import { AppShellTenantNav } from '@/components/app-shell-tenant-nav';
 
 export async function AppShell() {
     const session = await auth();
@@ -73,6 +74,8 @@ export async function AppShell() {
                     <AppShellTenantSelector tenants={tenants} />
                 )}
             </div>
+
+            <AppShellTenantNav />
 
             <div className="flex-1" />
 

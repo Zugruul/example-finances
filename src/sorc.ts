@@ -14,6 +14,10 @@ import {
 import { memorystore } from '@event-sorcerer/engine-memory';
 import { createMongoStore } from '@event-sorcerer/engine-mongo';
 import { MongoClient } from 'mongodb';
+import {
+    FINANCES_DB,
+    getSharedMongoClient,
+} from '@/lib/mongo';
 import { metricsPrometheus } from '@event-sorcerer/metrics-prometheus';
 import { cryptoshredding } from '@event-sorcerer/plugin-cryptoshredding';
 import {
@@ -87,6 +91,66 @@ import {
     usersByIdListen,
     type UserByIdDoc,
 } from '@/domains/users/users-by-id.readmodel';
+import {
+    accountEvents,
+    accountReducer,
+    accountCommands,
+    accountsByTenantApply,
+    accountsByTenantKey,
+    accountsByTenantListen,
+    accountBalanceApply,
+    accountBalanceKey,
+    accountBalanceListen,
+    type AccountStreamPattern,
+    type AccountDoc,
+    type AccountBalanceDoc,
+} from '@/domains/accounts';
+import {
+    categoryEvents,
+    categoryReducer,
+    categoryCommands,
+    categoriesByTenantApply,
+    categoriesByTenantKey,
+    categoriesByTenantListen,
+    type CategoryStreamPattern,
+    type CategoryDoc,
+} from '@/domains/categories';
+import {
+    transactionEvents,
+    transactionReducer,
+    transactionCommands,
+    transactionsApply,
+    transactionsKey,
+    transactionsListen,
+    type TransactionStreamPattern,
+    type TransactionDoc,
+} from '@/domains/transactions';
+import {
+    budgetEvents,
+    budgetReducer,
+    budgetCommands,
+    budgetsByTenantApply,
+    budgetsByTenantKey,
+    budgetsByTenantListen,
+    type BudgetStreamPattern,
+    type BudgetDoc,
+} from '@/domains/budgets';
+import {
+    templateEvents,
+    templateReducer,
+    templateCommands,
+    recurringTemplatesApply,
+    recurringTemplatesKey,
+    recurringTemplatesListen,
+    type TemplateStreamPattern,
+    type RecurringTemplateDoc,
+} from '@/domains/recurring-templates';
+import {
+    monthlyAggregateApply,
+    monthlyAggregateKey,
+    monthlyAggregateListen,
+    type MonthlyAggregateDoc,
+} from '@/domains/monthly-aggregates';
 
 // ----- HMR-safe singleton bootstrap -----
 
@@ -94,33 +158,21 @@ type FinancesSorcCache = {
     bundle: ReturnType<typeof buildSorc>;
     metrics: ReturnType<typeof metricsPrometheus>;
     readModels: ReturnType<typeof buildReadModels>;
-    readModelClient: MongoClient;
 };
-
-const READMODEL_DB_NAME = 'finances_readmodels';
 
 function buildSorc(metrics: ReturnType<typeof metricsPrometheus>) {
     type AnyEventClass = new (...args: any[]) => ISorcEvent<DefaultISorcEvent>;
 
-    // The example reuses the framework's MongoDB replica set. URI defaults
-    // to localhost:27020-22 from `pnpm infra:up`. Override with
-    // `FINANCES_MONGO_URI` (or fall back to `AUTH_MONGO_URI` so a single env
-    // var configures both Auth.js and the event store in dev).
-    const mongoUri =
-        process.env.FINANCES_MONGO_URI ??
-        process.env.AUTH_MONGO_URI ??
-        'mongodb://localhost:27020,localhost:27021,localhost:27022/?replicaSet=rs0';
-
+    // Single shared MongoClient — same pool used by Auth.js and the read
+    // models. The URI is rewritten to carry `/finances` as the default DB
+    // (see `src/lib/mongo.ts`), so engine-mongo's `client.db()` resolves to
+    // the consolidated `finances` database.
     const mongostore = createMongoStore({
-        createClient: () =>
-            new MongoClient(mongoUri, {
-                // Default Mongo driver options are fine for Wave A. Db name
-                // baked into the URI/connection — we use the default DB.
-            }) as never,
+        createClient: () => getSharedMongoClient() as never,
         names: {
-            getEventStoreCompendiumCollectionName: () => 'sorc-compendium',
-            getEventStoreCollectionName: () => 'sorc-events',
-            getCryptoKeysCollectionName: () => 'sorc-crypto-keys',
+            getEventStoreCompendiumCollectionName: () => 'events_compendium',
+            getEventStoreCollectionName: () => 'events',
+            getCryptoKeysCollectionName: () => 'events_crypto_keys',
         },
     });
 
@@ -154,7 +206,12 @@ function buildSorc(metrics: ReturnType<typeof metricsPrometheus>) {
         .setupEvent([...tenantEvents] as unknown as AnyEventClass[])
         .setupEvent([...membershipEvents] as unknown as AnyEventClass[])
         .setupEvent([...adminEvents] as unknown as AnyEventClass[])
-        .setupEvent([...userEvents] as unknown as AnyEventClass[]);
+        .setupEvent([...userEvents] as unknown as AnyEventClass[])
+        .setupEvent([...accountEvents] as unknown as AnyEventClass[])
+        .setupEvent([...categoryEvents] as unknown as AnyEventClass[])
+        .setupEvent([...transactionEvents] as unknown as AnyEventClass[])
+        .setupEvent([...budgetEvents] as unknown as AnyEventClass[])
+        .setupEvent([...templateEvents] as unknown as AnyEventClass[]);
 
     const aggregates = {
         tenant: sorc.aggregate({
@@ -217,6 +274,71 @@ function buildSorc(metrics: ReturnType<typeof metricsPrometheus>) {
             reducer: userReducer as never,
             commands: userCommands as never,
         }),
+        account: sorc.aggregate({
+            name: 'Account',
+            streams: ['account-*' as AccountStreamPattern],
+            events: [
+                { name: 'AccountCreated', version: '*' },
+                { name: 'AccountRenamed', version: '*' },
+                { name: 'AccountTypeChanged', version: '*' },
+                { name: 'AccountArchived', version: '*' },
+                { name: 'AccountClosed', version: '*' },
+            ],
+            initial: null as ReturnType<typeof accountReducer>,
+            reducer: accountReducer as never,
+            commands: accountCommands as never,
+        }),
+        category: sorc.aggregate({
+            name: 'Category',
+            streams: ['category-*' as CategoryStreamPattern],
+            events: [
+                { name: 'CategoryCreated', version: '*' },
+                { name: 'CategoryRenamed', version: '*' },
+                { name: 'CategoryReparented', version: '*' },
+                { name: 'CategoryColorChanged', version: '*' },
+                { name: 'CategoryArchived', version: '*' },
+            ],
+            initial: null as ReturnType<typeof categoryReducer>,
+            reducer: categoryReducer as never,
+            commands: categoryCommands as never,
+        }),
+        transaction: sorc.aggregate({
+            name: 'Transaction',
+            streams: ['transaction-*' as TransactionStreamPattern],
+            events: [
+                { name: 'TransactionRecorded', version: '*' },
+                { name: 'TransactionUpdated', version: '*' },
+                { name: 'TransactionDeleted', version: '*' },
+            ],
+            initial: null as ReturnType<typeof transactionReducer>,
+            reducer: transactionReducer as never,
+            commands: transactionCommands as never,
+        }),
+        budget: sorc.aggregate({
+            name: 'Budget',
+            streams: ['budget-*' as BudgetStreamPattern],
+            events: [
+                { name: 'BudgetCreated', version: '*' },
+                { name: 'BudgetUpdated', version: '*' },
+                { name: 'BudgetArchived', version: '*' },
+            ],
+            initial: null as ReturnType<typeof budgetReducer>,
+            reducer: budgetReducer as never,
+            commands: budgetCommands as never,
+        }),
+        recurringTemplate: sorc.aggregate({
+            name: 'RecurringTemplate',
+            streams: ['template-*' as TemplateStreamPattern],
+            events: [
+                { name: 'TemplateCreated', version: '*' },
+                { name: 'TemplateUpdated', version: '*' },
+                { name: 'TemplateArchived', version: '*' },
+                { name: 'TemplateMaterialized', version: '*' },
+            ],
+            initial: null as ReturnType<typeof templateReducer>,
+            reducer: templateReducer as never,
+            commands: templateCommands as never,
+        }),
     };
 
     return { sorc, aggregates };
@@ -229,7 +351,7 @@ function makeStore<Doc extends Record<string, any>>(
 ) {
     return new MongoReadModelStore<Doc>({
         client,
-        dbName: READMODEL_DB_NAME,
+        dbName: FINANCES_DB,
         collectionName,
         indexes,
     });
@@ -243,7 +365,7 @@ function buildReadModels(
         name: 'tenants',
         storeName: 'mongostore',
         events: tenantsListen as never,
-        store: makeStore<TenantDoc>(client, 'rm-tenants', [
+        store: makeStore<TenantDoc>(client, 'rm_tenants', [
             { key: { tenantId: 1 }, options: { unique: true } },
         ]),
         key: tenantsKey as never,
@@ -256,7 +378,7 @@ function buildReadModels(
             name: 'memberships',
             storeName: 'mongostore',
             events: membershipsListen as never,
-            store: makeStore<MembershipDoc>(client, 'rm-memberships', [
+            store: makeStore<MembershipDoc>(client, 'rm_memberships', [
                 { key: { membershipId: 1 }, options: { unique: true } },
                 { key: { tenantId: 1 } },
                 { key: { userId: 1 } },
@@ -276,7 +398,7 @@ function buildReadModels(
         name: 'admin-activity',
         storeName: 'mongostore',
         events: adminActivityListen as never,
-        store: makeStore<AdminActivityDoc>(client, 'rm-admin-activity', [
+        store: makeStore<AdminActivityDoc>(client, 'rm_admin_activity', [
             { key: { eventId: 1 }, options: { unique: true } },
             { key: { occurredAt: -1 } },
         ]),
@@ -293,7 +415,7 @@ function buildReadModels(
         name: 'platform-roles',
         storeName: 'mongostore',
         events: platformRolesListen as never,
-        store: makeStore<PlatformRoleDoc>(client, 'rm-platform-roles', [
+        store: makeStore<PlatformRoleDoc>(client, 'rm_platform_roles', [
             { key: { userId: 1 }, options: { unique: true } },
             { key: { role: 1 } },
         ]),
@@ -307,7 +429,7 @@ function buildReadModels(
             name: 'activity',
             storeName: 'mongostore',
             events: activityListen as never,
-            store: makeStore<ActivityDoc>(client, 'rm-activity', [
+            store: makeStore<ActivityDoc>(client, 'rm_activity', [
                 { key: { eventId: 1 }, options: { unique: true } },
                 { key: { tenantId: 1 } },
                 { key: { occurredAt: -1 } },
@@ -323,7 +445,7 @@ function buildReadModels(
             name: 'users-by-id',
             storeName: 'mongostore',
             events: usersByIdListen as never,
-            store: makeStore<UserByIdDoc>(client, 'rm-users-by-id', [
+            store: makeStore<UserByIdDoc>(client, 'rm_users_by_id', [
                 { key: { userId: 1 }, options: { unique: true } },
                 { key: { email: 1 } },
             ]),
@@ -332,6 +454,135 @@ function buildReadModels(
         },
     );
 
+    const accountsByTenant = new SorcReadModel<
+        AccountDoc,
+        any,
+        any,
+        typeof sorc
+    >(sorc, {
+        name: 'accounts-by-tenant',
+        storeName: 'mongostore',
+        events: accountsByTenantListen as never,
+        store: makeStore<AccountDoc>(client, 'rm_accounts_by_tenant', [
+            { key: { accountId: 1 }, options: { unique: true } },
+            { key: { tenantId: 1 } },
+        ]),
+        key: accountsByTenantKey as never,
+        apply: accountsByTenantApply as never,
+    });
+
+    const accountBalance = new SorcReadModel<
+        AccountBalanceDoc,
+        any,
+        any,
+        typeof sorc
+    >(sorc, {
+        name: 'account-balance',
+        storeName: 'mongostore',
+        events: accountBalanceListen as never,
+        store: makeStore<AccountBalanceDoc>(client, 'rm_account_balance', [
+            { key: { accountId: 1 }, options: { unique: true } },
+            { key: { tenantId: 1 } },
+        ]),
+        key: accountBalanceKey as never,
+        apply: accountBalanceApply as never,
+    });
+
+    const categoriesByTenant = new SorcReadModel<
+        CategoryDoc,
+        any,
+        any,
+        typeof sorc
+    >(sorc, {
+        name: 'categories-by-tenant',
+        storeName: 'mongostore',
+        events: categoriesByTenantListen as never,
+        store: makeStore<CategoryDoc>(client, 'rm_categories_by_tenant', [
+            { key: { categoryId: 1 }, options: { unique: true } },
+            { key: { tenantId: 1 } },
+            { key: { parentId: 1 } },
+        ]),
+        key: categoriesByTenantKey as never,
+        apply: categoriesByTenantApply as never,
+    });
+
+    // Single transactions read model — per-transaction doc with multiple
+    // secondary indexes (tenantId / accountId / categoryId / occurredOn)
+    // covering the by-tenant / by-account / by-category access patterns
+    // documented in [[domains-transactions]].
+    const transactions = new SorcReadModel<
+        TransactionDoc,
+        any,
+        any,
+        typeof sorc
+    >(sorc, {
+        name: 'transactions',
+        storeName: 'mongostore',
+        events: transactionsListen as never,
+        store: makeStore<TransactionDoc>(client, 'rm_transactions', [
+            { key: { transactionId: 1 }, options: { unique: true } },
+            { key: { tenantId: 1, occurredOn: -1 } },
+            { key: { accountId: 1, occurredOn: -1 } },
+            { key: { categoryId: 1, occurredOn: -1 } },
+            { key: { templateId: 1 } },
+        ]),
+        key: transactionsKey as never,
+        apply: transactionsApply as never,
+    });
+
+    const budgetsByTenant = new SorcReadModel<
+        BudgetDoc,
+        any,
+        any,
+        typeof sorc
+    >(sorc, {
+        name: 'budgets-by-tenant',
+        storeName: 'mongostore',
+        events: budgetsByTenantListen as never,
+        store: makeStore<BudgetDoc>(client, 'rm_budgets_by_tenant', [
+            { key: { categoryId: 1 }, options: { unique: true } },
+            { key: { tenantId: 1 } },
+            { key: { budgetId: 1 } },
+        ]),
+        key: budgetsByTenantKey as never,
+        apply: budgetsByTenantApply as never,
+    });
+
+    const recurringTemplates = new SorcReadModel<
+        RecurringTemplateDoc,
+        any,
+        any,
+        typeof sorc
+    >(sorc, {
+        name: 'recurring-templates',
+        storeName: 'mongostore',
+        events: recurringTemplatesListen as never,
+        store: makeStore<RecurringTemplateDoc>(client, 'rm_recurring_templates', [
+            { key: { templateId: 1 }, options: { unique: true } },
+            { key: { tenantId: 1 } },
+            { key: { accountId: 1 } },
+        ]),
+        key: recurringTemplatesKey as never,
+        apply: recurringTemplatesApply as never,
+    });
+
+    const monthlyAggregate = new SorcReadModel<
+        MonthlyAggregateDoc,
+        any,
+        any,
+        typeof sorc
+    >(sorc, {
+        name: 'monthly-aggregate',
+        storeName: 'mongostore',
+        events: monthlyAggregateListen as never,
+        store: makeStore<MonthlyAggregateDoc>(client, 'rm_monthly_aggregate', [
+            { key: { aggregateKey: 1 }, options: { unique: true } },
+            { key: { tenantId: 1, year: -1, month: -1 } },
+        ]),
+        key: monthlyAggregateKey as never,
+        apply: monthlyAggregateApply as never,
+    });
+
     return {
         tenants,
         memberships,
@@ -339,6 +590,13 @@ function buildReadModels(
         platformRoles,
         activity,
         usersById,
+        accountsByTenant,
+        accountBalance,
+        categoriesByTenant,
+        transactions,
+        budgetsByTenant,
+        recurringTemplates,
+        monthlyAggregate,
     };
 }
 
@@ -355,16 +613,9 @@ if (!cache) {
     collectDefaultMetrics({ register: metrics.registry });
     const bundle = buildSorc(metrics);
 
-    // Dedicated MongoClient for read-model storage. Same URI as the event
-    // store but a separate database (`finances_readmodels`). Connected lazily
-    // — the driver dials on the first operation.
-    const readModelClient = new MongoClient(
-        process.env.FINANCES_MONGO_URI ??
-            process.env.AUTH_MONGO_URI ??
-            'mongodb://localhost:27020,localhost:27021,localhost:27022/?replicaSet=rs0',
-    );
-
-    const readModels = buildReadModels(bundle.sorc, readModelClient);
+    // Read-model store reuses the shared MongoClient (same connection pool
+    // as the event store and Auth.js — see src/lib/mongo.ts).
+    const readModels = buildReadModels(bundle.sorc, getSharedMongoClient());
 
     // Subscribe read models at boot. 5s default polling per read-models pkg.
     void readModels.tenants.subscribe();
@@ -373,8 +624,15 @@ if (!cache) {
     void readModels.platformRoles.subscribe();
     void readModels.activity.subscribe();
     void readModels.usersById.subscribe();
+    void readModels.accountsByTenant.subscribe();
+    void readModels.accountBalance.subscribe();
+    void readModels.categoriesByTenant.subscribe();
+    void readModels.transactions.subscribe();
+    void readModels.budgetsByTenant.subscribe();
+    void readModels.recurringTemplates.subscribe();
+    void readModels.monthlyAggregate.subscribe();
 
-    cache = { bundle, metrics, readModels, readModelClient };
+    cache = { bundle, metrics, readModels };
     if (process.env.NODE_ENV !== 'production') {
         globalForSorc.__financesSorc = cache;
     }
