@@ -293,11 +293,22 @@ export function formatAuditEvent(
 
         // ---------- members ----------
         case 'MemberInvited': {
-            card.title = `Invited ${p.email} as ${p.role}`;
+            const who = p.invitedEmail ?? p.email ?? 'a member';
+            card.title = `Invited ${who} as ${p.role}`;
+            card.actorUserId = p.invitedByUserId
+                ? String(p.invitedByUserId)
+                : card.actorUserId;
+            card.actorEmail = card.actorUserId
+                ? ctx.users.get(card.actorUserId)?.email
+                : card.actorEmail;
             return card;
         }
-        case 'MemberAccepted': {
-            card.title = `Joined as ${p.role}`;
+        case 'InvitationAccepted': {
+            const userId = p.userId ? String(p.userId) : undefined;
+            const who = userId
+                ? (ctx.users.get(userId)?.email ?? 'a user')
+                : 'a user';
+            card.title = `${who} joined the workspace`;
             return card;
         }
         case 'MemberRoleChanged': {
