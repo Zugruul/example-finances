@@ -349,7 +349,13 @@ function AuditCardView({ card }: { card: AuditCard }) {
                     <p className="text-sm font-medium leading-snug">
                         {card.title}
                     </p>
-                    <span className="shrink-0 text-xs text-muted-foreground">
+                    {/* Server runs in UTC; client in the user's tz.
+                        Server's text is best-effort and will be replaced
+                        on hydration — suppress the mismatch warning. */}
+                    <span
+                        suppressHydrationWarning
+                        className="shrink-0 text-xs text-muted-foreground"
+                    >
                         {formatLocalTime(card.publishedAt)}
                     </span>
                 </div>
