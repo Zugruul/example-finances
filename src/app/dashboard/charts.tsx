@@ -441,3 +441,101 @@ function heatmapColor(ratio: number): string {
 function parseYmd(ymd: string): Date {
     return new Date(`${ymd}T00:00:00Z`);
 }
+
+/**
+ * Forward-looking cash-flow projection. Given the starting balance and
+ * a list of per-day deltas (positive income, negative expense) derived
+ * from active recurring templates, draws the projected running balance
+ * over the next N days. Same area-line style as NetWorthLine — visual
+ * continuity between retrospective and prospective trends.
+ */
+export function CashflowForecastChart({
+    data,
+    currency,
+}: {
+    data: Array<{ label: string; balance: number }>;
+    currency: string;
+}) {
+    const fmt = (v: number) => formatMoney(v, currency);
+    if (data.length === 0) {
+        return (
+            <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
+                Add recurring templates to see a forecast.
+            </div>
+        );
+    }
+    return (
+        <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+                <AreaChart
+                    data={data}
+                    margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+                >
+                    <defs>
+                        <linearGradient
+                            id="cashflowFill"
+                            x1="0"
+                            y1="0"
+                            x2="0"
+                            y2="1"
+                        >
+                            <stop
+                                offset="0%"
+                                stopColor="hsl(43 96% 56%)"
+                                stopOpacity={0.4}
+                            />
+                            <stop
+                                offset="100%"
+                                stopColor="hsl(43 96% 56%)"
+                                stopOpacity={0}
+                            />
+                        </linearGradient>
+                    </defs>
+                    <CartesianGrid
+                        strokeDasharray="3 3"
+                        vertical={false}
+                        className="stroke-muted"
+                    />
+                    <XAxis
+                        dataKey="label"
+                        className="text-xs"
+                        tickLine={false}
+                        axisLine={false}
+                    />
+                    <YAxis
+                        className="text-xs"
+                        tickFormatter={(v) =>
+                            v >= 1_000_00
+                                ? `${Math.round(v / 100_00)}k`
+                                : v >= 100
+                                  ? `${Math.round(v / 100)}`
+                                  : `${v}`
+                        }
+                        tickLine={false}
+                        axisLine={false}
+                        width={48}
+                    />
+                    <Tooltip
+                        formatter={(v) =>
+                            fmt(typeof v === 'number' ? v : Number(v))
+                        }
+                        contentStyle={{
+                            background: 'hsl(var(--popover))',
+                            border: '1px solid hsl(var(--border))',
+                            borderRadius: '0.375rem',
+                            fontSize: '0.75rem',
+                        }}
+                    />
+                    <Area
+                        type="monotone"
+                        dataKey="balance"
+                        stroke="hsl(43 96% 46%)"
+                        strokeWidth={2}
+                        fill="url(#cashflowFill)"
+                        name="Projected balance"
+                    />
+                </AreaChart>
+            </ResponsiveContainer>
+        </div>
+    );
+}

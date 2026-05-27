@@ -12,11 +12,12 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { formatMoney } from '@/lib/money';
-import { nextDueOn } from '@/domains/recurring-templates';
+import { dueDatesUpTo, nextDueOn } from '@/domains/recurring-templates';
 import { materializeDueTemplates } from '@/lib/recurring-materialize';
 import type { ActivityDoc } from '@/domains/activity';
 import type { SorcUUID } from '@event-sorcerer/core';
 import {
+    CashflowForecastChart,
     IncomeExpenseBar,
     NetWorthLine,
     SpendingDonut,
@@ -237,6 +238,35 @@ export default async function DashboardPage({
               .slice(0, 5)
         : [];
 
+    // ----- Savings rate (this month) -----
+    const monthIncome = monthly?.income ?? 0;
+    const monthExpense = monthly?.expense ?? 0;
+    const monthNet = monthIncome - monthExpense;
+    const savingsRate =
+        monthIncome > 0 ? Math.max(-2, Math.min(2, monthNet / monthIncome)) : 0;
+
+    // ----- Subscription cost (monthly-normalized total of active templates) -----
+    // Cadence multipliers normalize each template's amount to a monthly
+    // equivalent. The numbers are deliberate approximations (52/12 for
+    // weekly, etc.) because "monthly equivalent of weekly" depends on
+    // the month — for a dashboard KPI this is fine.
+    const monthlyEquivalent = (cadence: { kind: string }, amount: number) => {
+        switch (cadence.kind) {
+            case 'daily':
+                return amount * 30;
+            case 'weekly':
+                return amount * (52 / 12);
+            case 'biweekly':
+                return amount * (26 / 12);
+            case 'monthly':
+                return amount;
+            case 'yearly':
+                return amount / 12;
+            default:
+                return amount;
+        }
+    };
+
     // ----- Last-6-months income vs expense (bar chart) -----
     // Walk back month-by-month and join with monthlyAggregate. Months
     // with no events render as 0/0 — keeps the x-axis at a fixed width.
@@ -420,6 +450,67 @@ export default async function DashboardPage({
 
     const monthlyCurrency =
         budgets[0]?.currency ?? accountBalances[0]?.currency ?? 'USD';
+
+    // Subscription / recurring spend (monthly-normalized). Only counts
+    // expense-type templates — income templates (e.g. salary) aren't
+    // subscriptions.
+    const monthlySubscriptionsTotal = recurring
+        .filter((t) => t.transactionType === 'expense')
+        .reduce(
+            (sum, t) =>
+                sum +
+                monthlyEquivalent(
+                    t.cadence as { kind: string },
+                    t.amount,
+                ),
+            0,
+        );
+
+    // ----- Cash-flow forecast (next 60 days) -----
+    // Walk each active recurring template forward and compute its due
+    // dates up to today+60d. Sum (+income / -expense) into a per-day
+    // delta map; running balance starts at the live net worth.
+    const horizonDays = 60;
+    const forecastStart = new Date();
+    forecastStart.setUTCHours(0, 0, 0, 0);
+    const forecastEnd = new Date(forecastStart);
+    forecastEnd.setUTCDate(forecastEnd.getUTCDate() + horizonDays);
+    const forecastEndYmd = forecastEnd.toISOString().slice(0, 10);
+    const deltaByDay = new Map<string, number>();
+    if (currentTenantId) {
+        for (const t of recurring) {
+            const due = dueDatesUpTo(
+                t.cadence,
+                t.startsOn,
+                t.lastMaterializedOn,
+                t.endsOn,
+                forecastEndYmd,
+            );
+            for (const d of due) {
+                if (d < forecastStart.toISOString().slice(0, 10)) continue;
+                const sign = t.transactionType === 'income' ? 1 : -1;
+                deltaByDay.set(d, (deltaByDay.get(d) ?? 0) + sign * t.amount);
+            }
+        }
+    }
+    const forecastSeries: Array<{ label: string; balance: number }> = [];
+    {
+        let running = liveNetWorth;
+        for (let i = 0; i <= horizonDays; i++) {
+            const d = new Date(forecastStart);
+            d.setUTCDate(forecastStart.getUTCDate() + i);
+            const ymd = d.toISOString().slice(0, 10);
+            running += deltaByDay.get(ymd) ?? 0;
+            forecastSeries.push({
+                label: d.toLocaleString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                    timeZone: 'UTC',
+                }),
+                balance: running,
+            });
+        }
+    }
 
     // ----- existing activity feed -----
     const allActivity = (await readModels.activity.find({})) as ActivityDoc[];
@@ -654,6 +745,23 @@ export default async function DashboardPage({
                             </CardContent>
                         </Card>
                     </section>
+                    <section>
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Cash-flow forecast</CardTitle>
+                                <p className="text-xs text-muted-foreground">
+                                    Next 60 days — projected from active
+                                    recurring templates.
+                                </p>
+                            </CardHeader>
+                            <CardContent>
+                                <CashflowForecastChart
+                                    data={forecastSeries}
+                                    currency={monthlyCurrency}
+                                />
+                            </CardContent>
+                        </Card>
+                    </section>
                 </>
             ) : null}
 
@@ -794,22 +902,63 @@ export default async function DashboardPage({
                 </Card>
             ) : null}
 
-            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <StatTile
-                    label="Active tenants"
-                    value={activeTenants.length}
-                />
-                <StatTile
-                    label="Where you manage"
-                    value={ownedOrAdminCount}
-                    hint="Tenants where you’re owner or admin"
-                />
-                <StatTile
-                    label="Tenure"
-                    value={tenureLabel}
-                    hint={oldestJoinHint}
-                />
-            </section>
+            {currentTenantId ? (
+                <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <StatTile
+                        label="Savings rate"
+                        value={
+                            monthIncome > 0
+                                ? `${Math.round(savingsRate * 100)}%`
+                                : '—'
+                        }
+                        hint={
+                            monthIncome > 0
+                                ? monthNet >= 0
+                                    ? `Net +${formatMoney(monthNet, monthlyCurrency)} this month`
+                                    : `Net −${formatMoney(-monthNet, monthlyCurrency)} this month`
+                                : 'No income this month yet'
+                        }
+                    />
+                    <StatTile
+                        label="Subscriptions"
+                        value={formatMoney(
+                            monthlySubscriptionsTotal,
+                            monthlyCurrency,
+                        )}
+                        hint={
+                            recurring.length === 0
+                                ? 'No recurring expense templates yet'
+                                : `${
+                                      recurring.filter(
+                                          (t) =>
+                                              t.transactionType === 'expense',
+                                      ).length
+                                  } active expense templates · monthly-equivalent`
+                        }
+                    />
+                    <StatTile
+                        label="Active tenants"
+                        value={activeTenants.length}
+                    />
+                </section>
+            ) : (
+                <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <StatTile
+                        label="Active tenants"
+                        value={activeTenants.length}
+                    />
+                    <StatTile
+                        label="Where you manage"
+                        value={ownedOrAdminCount}
+                        hint="Tenants where you’re owner or admin"
+                    />
+                    <StatTile
+                        label="Tenure"
+                        value={tenureLabel}
+                        hint={oldestJoinHint}
+                    />
+                </section>
+            )}
 
             {pendingInvitations.length > 0 ? (
                 <section className="flex flex-col gap-3">
