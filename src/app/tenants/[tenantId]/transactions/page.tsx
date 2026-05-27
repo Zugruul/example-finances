@@ -38,6 +38,8 @@ type SearchParams = {
     from?: string;
     to?: string;
     page?: string;
+    /** When set, the New transaction form pre-fills from this template. */
+    templateId?: string;
 };
 
 const PAGE_SIZE = 50;
@@ -112,6 +114,50 @@ export default async function TransactionsListPage(props: {
     const transfer = recordTransferAction.bind(null, tenantId);
     const revertAction = revertTransactionsAction.bind(null, tenantId);
     const applyTemplate = applyTemplateAction.bind(null, tenantId);
+
+    // Pre-fill: when the user clicked a quick-pick card we land here with
+    // ?templateId=<id>. Resolve the template (if it still exists and is
+    // active) and compute the form defaults — same fields the user can
+    // edit before submitting.
+    const selectedTemplate =
+        sp.templateId && sp.templateId.trim()
+            ? (
+                  await readModels.recurringTemplates.find({
+                      templateId: sp.templateId.trim() as never,
+                  })
+              )[0]
+            : null;
+    const formAction = selectedTemplate ? applyTemplate : record;
+    const formDefaults = (() => {
+        if (!selectedTemplate) return null;
+        if (String(selectedTemplate.tenantId) !== tenantId) return null;
+        if (selectedTemplate.isArchived) return null;
+        const tplAccount = accountById.get(
+            String(selectedTemplate.accountId),
+        );
+        if (!tplAccount || tplAccount.isClosed) return null;
+        const today = new Date().toISOString().slice(0, 10);
+        const due = nextDueOn(
+            selectedTemplate.cadence as Cadence,
+            selectedTemplate.startsOn,
+            selectedTemplate.lastMaterializedOn,
+            selectedTemplate.endsOn,
+        );
+        // Amount comes back as minor-units (cents); the form expects a
+        // human decimal string in the account currency.
+        const major = (selectedTemplate.amount / 100).toFixed(2);
+        return {
+            templateId: String(selectedTemplate.templateId),
+            accountId: String(selectedTemplate.accountId),
+            categoryId: selectedTemplate.categoryId
+                ? String(selectedTemplate.categoryId)
+                : '',
+            amount: major,
+            occurredOn: due ?? today,
+            description: selectedTemplate.description ?? '',
+            transactionType: selectedTemplate.transactionType,
+        };
+    })();
 
     // Build quick-pick cards from active templates. The card shows the
     // next on-cadence due date (or "no upcoming date" for ended ones);
@@ -415,27 +461,59 @@ export default async function TransactionsListPage(props: {
 
             {canRecord && quickPickTemplates.length > 0 ? (
                 <QuickPickTemplates
+                    tenantId={tenantId}
                     templates={quickPickTemplates}
-                    applyAction={applyTemplate}
+                    activeTemplateId={formDefaults?.templateId}
                 />
             ) : null}
 
             {canRecord && accounts.length > 0 ? (
-                <Card>
+                <Card id="new-transaction-form">
                     <CardHeader>
-                        <CardTitle>New transaction</CardTitle>
+                        <CardTitle>
+                            {formDefaults
+                                ? `New transaction from recurring template`
+                                : 'New transaction'}
+                        </CardTitle>
                     </CardHeader>
                     <CardContent>
                         <form
-                            action={record}
+                            // Use the apply-template flow when a templateId
+                            // is in the URL (so submission emits both
+                            // TransactionRecorded AND TemplateMaterialized
+                            // atomically). Otherwise the regular record
+                            // action.
+                            action={formAction}
+                            // Keep the form's submitted URL stable so
+                            // redirects + revalidations work the same
+                            // either way. The hidden templateId is the
+                            // only thing the apply-template path needs
+                            // that the form wouldn't otherwise carry.
+                            // `key` forces React to remount the form (and
+                            // reset uncontrolled inputs to their new
+                            // defaultValue) every time the user picks a
+                            // different template.
+                            key={
+                                formDefaults?.templateId ?? 'manual'
+                            }
                             className="grid gap-3 sm:grid-cols-2"
                         >
+                            {formDefaults ? (
+                                <input
+                                    type="hidden"
+                                    name="templateId"
+                                    value={formDefaults.templateId}
+                                />
+                            ) : null}
                             <div className="flex flex-col gap-1.5">
                                 <Label htmlFor="accountId">Account</Label>
                                 <select
                                     id="accountId"
                                     name="accountId"
                                     required
+                                    defaultValue={
+                                        formDefaults?.accountId ?? ''
+                                    }
                                     className="h-9 rounded-md border bg-background px-3 text-sm"
                                 >
                                     {accounts
@@ -455,7 +533,9 @@ export default async function TransactionsListPage(props: {
                                 <select
                                     id="categoryId"
                                     name="categoryId"
-                                    defaultValue=""
+                                    defaultValue={
+                                        formDefaults?.categoryId ?? ''
+                                    }
                                     className="h-9 rounded-md border bg-background px-3 text-sm"
                                 >
                                     <option value="">(none)</option>
@@ -476,7 +556,10 @@ export default async function TransactionsListPage(props: {
                                 <select
                                     id="transactionType"
                                     name="transactionType"
-                                    defaultValue="expense"
+                                    defaultValue={
+                                        formDefaults?.transactionType ??
+                                        'expense'
+                                    }
                                     className="h-9 rounded-md border bg-background px-3 text-sm"
                                 >
                                     <option value="income">income</option>
@@ -491,6 +574,7 @@ export default async function TransactionsListPage(props: {
                                     type="text"
                                     inputMode="decimal"
                                     placeholder="0.00"
+                                    defaultValue={formDefaults?.amount}
                                     required
                                 />
                             </div>
@@ -500,6 +584,7 @@ export default async function TransactionsListPage(props: {
                                     id="occurredOn"
                                     name="occurredOn"
                                     type="date"
+                                    defaultValue={formDefaults?.occurredOn}
                                     required
                                 />
                             </div>
@@ -511,10 +596,23 @@ export default async function TransactionsListPage(props: {
                                     id="description"
                                     name="description"
                                     placeholder="Grocery store"
+                                    defaultValue={formDefaults?.description}
                                 />
                             </div>
-                            <div className="sm:col-span-2">
-                                <Button type="submit">Record</Button>
+                            <div className="flex items-center gap-3 sm:col-span-2">
+                                <Button type="submit">
+                                    {formDefaults
+                                        ? `Record & mark template applied`
+                                        : 'Record'}
+                                </Button>
+                                {formDefaults ? (
+                                    <Link
+                                        href={`/tenants/${tenantId}/transactions#new-transaction-form`}
+                                        className="text-sm text-muted-foreground hover:underline"
+                                    >
+                                        Clear template
+                                    </Link>
+                                ) : null}
                             </div>
                         </form>
                     </CardContent>

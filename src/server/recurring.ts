@@ -303,15 +303,13 @@ export const materializeDueTemplatesAction = withActorContext(
 );
 
 /**
- * Apply ONE recurring template for a single occurrence — used by the
- * quick-pick cards on /tenants/[id]/transactions. Emits both a fresh
- * `TransactionRecorded` AND a `TemplateMaterialized` for the same
- * `occurredOn` inside a single Mongo transaction (sorc.publishAtomic),
- * so the template's `lastMaterializedOn` cursor advances or neither
+ * Apply a recurring template via the new-transaction form. Submits ALL
+ * fields from the form (so the user can override anything the template
+ * pre-filled) plus a hidden `templateId`. Emits both a
+ * `TransactionRecorded` (with the form's amount/date/etc) AND a
+ * `TemplateMaterialized` (pinned to the form's occurredOn) inside one
+ * sorc.publishAtomic so the template cursor advances or neither
  * event lands.
- *
- * If `occurredOn` is omitted, uses the template's next due date (or
- * today if no on-cadence date is available).
  */
 export const applyTemplateAction = withActorContext(
     async (tenantId: string, formData: FormData) => {
@@ -321,9 +319,6 @@ export const applyTemplateAction = withActorContext(
 
         const templateId = String(formData.get('templateId') ?? '').trim();
         if (!templateId) throw new Error('templateId is required.');
-        const occurredOnRaw = String(
-            formData.get('occurredOn') ?? '',
-        ).trim();
 
         const [t] = await readModels.recurringTemplates.find({
             templateId: templateId as SorcUUID,
@@ -333,24 +328,56 @@ export const applyTemplateAction = withActorContext(
         }
         if (t.isArchived) throw new Error('Template is archived.');
 
+        const accountId = String(formData.get('accountId') ?? '').trim();
+        if (!accountId) throw new Error('Account is required.');
         const [account] = await readModels.accountsByTenant.find({
-            accountId: t.accountId,
+            accountId,
         });
-        if (!account || account.isClosed) {
-            throw new Error('Account not available for this template.');
+        if (!account || String(account.tenantId) !== tenantId) {
+            throw new Error('Account not found in this tenant.');
+        }
+        if (account.isClosed) {
+            throw new Error('Account is closed; cannot record transactions.');
         }
 
-        // Pick the date. Caller override > template's next on-cadence
-        // due date > today. The aggregate enforces idempotence by
-        // refusing to materialize a date at-or-before lastMaterializedOn.
-        const today = todayYmd();
-        const due = nextDueOn(
-            t.cadence,
-            t.startsOn,
-            t.lastMaterializedOn,
-            t.endsOn,
-        );
-        const occurredOn = occurredOnRaw || due || today;
+        const transactionType = String(
+            formData.get('transactionType') ?? '',
+        ).trim();
+        if (
+            transactionType !== 'income' &&
+            transactionType !== 'expense'
+        ) {
+            throw new Error(
+                `Invalid transaction type "${transactionType}"`,
+            );
+        }
+        const amountRaw = String(formData.get('amount') ?? '').trim();
+        const amount = parseAmountToMinor(amountRaw, account.currency);
+        if (amount === null || amount === 0) {
+            throw new Error('Amount must be a positive decimal.');
+        }
+        const occurredOnRaw = String(formData.get('occurredOn') ?? '').trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(occurredOnRaw)) {
+            throw new Error(
+                `Invalid date "${occurredOnRaw}" (expected YYYY-MM-DD)`,
+            );
+        }
+        const occurredOn = occurredOnRaw;
+        const description =
+            String(formData.get('description') ?? '').trim() || undefined;
+        const categoryRaw = String(formData.get('categoryId') ?? '').trim();
+        const categoryId = categoryRaw
+            ? (categoryRaw as SorcUUID)
+            : undefined;
+
+        if (categoryId) {
+            const [category] = await readModels.categoriesByTenant.find({
+                categoryId,
+            });
+            if (!category || String(category.tenantId) !== tenantId) {
+                throw new Error('Category not found in this tenant.');
+            }
+        }
 
         const transactionId = uuidv7() as SorcUUID;
         const txStream = transactionStream(transactionId);
@@ -368,13 +395,13 @@ export const applyTemplateAction = withActorContext(
             payload: {
                 transactionId,
                 tenantId: tenantId as SorcUUID,
-                accountId: t.accountId,
-                categoryId: t.categoryId,
-                amount: t.amount,
+                accountId: accountId as SorcUUID,
+                categoryId,
+                amount,
                 currency: account.currency,
                 occurredOn,
-                description: t.description,
-                transactionType: t.transactionType,
+                description,
+                transactionType: transactionType as 'income' | 'expense',
                 templateId: t.templateId,
                 recordedByUserId: userId,
                 recordedAt: new Date(),
@@ -411,12 +438,12 @@ export const applyTemplateAction = withActorContext(
 
         revalidatePath(`/tenants/${tenantId}/transactions`);
         revalidatePath(`/tenants/${tenantId}/recurring`);
-        revalidatePath(`/tenants/${tenantId}/accounts/${t.accountId}`);
+        revalidatePath(`/tenants/${tenantId}/accounts/${accountId}`);
         redirect(
             withToast(
                 `/tenants/${tenantId}/transactions`,
                 'success',
-                `Recorded ${t.description ?? t.transactionType} for ${occurredOn}`,
+                `Recorded ${description ?? transactionType} for ${occurredOn}`,
             ),
         );
     },

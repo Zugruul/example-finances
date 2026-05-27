@@ -1,6 +1,4 @@
-'use client';
-
-import { useTransition } from 'react';
+import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { CalendarClockIcon } from 'lucide-react';
@@ -21,28 +19,25 @@ export type QuickPickTemplate = {
 };
 
 interface Props {
+    tenantId: string;
     templates: QuickPickTemplate[];
-    /** Server action bound with tenantId; FormData = {templateId, occurredOn?}. */
-    applyAction: (formData: FormData) => Promise<void> | void;
+    /** Currently-selected template id (matches the templateId in the URL). */
+    activeTemplateId?: string;
 }
 
-export function QuickPickTemplates({ templates, applyAction }: Props) {
-    const [isPending, startTransition] = useTransition();
-
+/**
+ * Server component. Clicking a card navigates to
+ * `/tenants/[id]/transactions?templateId=<id>` which causes the
+ * page to pre-fill the New transaction form with this template's
+ * defaults. Submitting the form actually records the transaction and
+ * advances the template cursor.
+ */
+export function QuickPickTemplates({
+    tenantId,
+    templates,
+    activeTemplateId,
+}: Props) {
     if (templates.length === 0) return null;
-
-    function apply(t: QuickPickTemplate) {
-        const fd = new FormData();
-        fd.set('templateId', t.templateId);
-        if (t.nextDueOn) fd.set('occurredOn', t.nextDueOn);
-        startTransition(async () => {
-            try {
-                await applyAction(fd);
-            } catch (err) {
-                console.error('[quick-pick] apply failed', err);
-            }
-        });
-    }
 
     return (
         <Card>
@@ -55,29 +50,42 @@ export function QuickPickTemplates({ templates, applyAction }: Props) {
             <CardContent className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {templates.map((t) => {
                     const sign = t.transactionType === 'income' ? '+' : '−';
+                    const isActive = activeTemplateId === t.templateId;
+                    const href = isActive
+                        ? `/tenants/${tenantId}/transactions#new-transaction-form`
+                        : `/tenants/${tenantId}/transactions?templateId=${encodeURIComponent(t.templateId)}#new-transaction-form`;
                     return (
-                        <button
+                        <Link
                             key={t.templateId}
-                            type="button"
-                            disabled={isPending}
-                            onClick={() => apply(t)}
+                            href={href}
+                            scroll
                             className={
-                                'flex flex-col gap-1 rounded-md border p-3 text-left transition hover:bg-accent/40 disabled:cursor-wait disabled:opacity-60 ' +
-                                (t.isDueNow
+                                'flex flex-col gap-1 rounded-md border p-3 text-left transition hover:bg-accent/40 ' +
+                                (isActive
+                                    ? 'border-primary ring-2 ring-primary/30 '
+                                    : '') +
+                                (!isActive && t.isDueNow
                                     ? 'border-emerald-500/60 ring-1 ring-emerald-500/30'
                                     : '')
                             }
                             title={
                                 t.nextDueOn
-                                    ? `Apply for ${t.nextDueOn}`
-                                    : 'Apply for today'
+                                    ? `Pre-fill the form for ${t.nextDueOn}`
+                                    : 'Pre-fill the form for today'
                             }
                         >
                             <div className="flex items-start justify-between gap-2">
                                 <p className="text-sm font-medium leading-snug">
                                     {t.title}
                                 </p>
-                                {t.isDueNow ? (
+                                {isActive ? (
+                                    <Badge
+                                        variant="outline"
+                                        className="border-primary text-[10px] text-primary"
+                                    >
+                                        selected
+                                    </Badge>
+                                ) : t.isDueNow ? (
                                     <Badge
                                         variant="outline"
                                         className="border-emerald-500 text-[10px] text-emerald-700 dark:text-emerald-300"
@@ -98,7 +106,7 @@ export function QuickPickTemplates({ templates, applyAction }: Props) {
                                     {t.nextDueOn ?? 'no upcoming date'}
                                 </span>
                             </div>
-                        </button>
+                        </Link>
                     );
                 })}
             </CardContent>
