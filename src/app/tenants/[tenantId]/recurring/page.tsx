@@ -38,6 +38,8 @@ function describeCadence(c: {
             return 'Daily';
         case 'weekly':
             return `Weekly · day ${c.dayOfWeek}`;
+        case 'biweekly':
+            return `Every 2 weeks · day ${c.dayOfWeek}`;
         case 'monthly':
             return `Monthly · day ${c.dayOfMonth}`;
         case 'yearly':
@@ -362,6 +364,9 @@ export default async function RecurringPage(props: {
                                 >
                                     <option value="daily">daily</option>
                                     <option value="weekly">weekly</option>
+                                    <option value="biweekly">
+                                        every 2 weeks
+                                    </option>
                                     <option value="monthly">monthly</option>
                                     <option value="yearly">yearly</option>
                                 </select>

@@ -19,6 +19,7 @@ export type TemplateType = 'income' | 'expense';
 export type Cadence =
     | { kind: 'daily' }
     | { kind: 'weekly'; dayOfWeek: number }
+    | { kind: 'biweekly'; dayOfWeek: number }
     | { kind: 'monthly'; dayOfMonth: number }
     | { kind: 'yearly'; month: number; dayOfMonth: number };
 

@@ -75,6 +75,13 @@ function parseCadence(formData: FormData): Cadence {
             }
             return { kind: 'weekly', dayOfWeek: dow };
         }
+        case 'biweekly': {
+            const dow = Number(formData.get('cadence-dayOfWeek') ?? '');
+            if (!Number.isInteger(dow) || dow < 0 || dow > 6) {
+                throw new Error('Invalid day of week (0-6).');
+            }
+            return { kind: 'biweekly', dayOfWeek: dow };
+        }
         case 'monthly': {
             const dom = Number(formData.get('cadence-dayOfMonth') ?? '');
             if (!Number.isInteger(dom) || dom < 1 || dom > 31) {

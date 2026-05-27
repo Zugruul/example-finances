@@ -48,6 +48,8 @@ function formatCadence(c: Cadence): string {
             return 'daily';
         case 'weekly':
             return `weekly (day ${c.dayOfWeek})`;
+        case 'biweekly':
+            return `every 2 weeks (day ${c.dayOfWeek})`;
         case 'monthly':
             return `monthly (day ${c.dayOfMonth})`;
         case 'yearly':

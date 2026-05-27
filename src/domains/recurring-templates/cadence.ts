@@ -68,6 +68,8 @@ function advance(cadence: Cadence, from: string): string {
             return addDays(from, 1);
         case 'weekly':
             return addDays(from, 7);
+        case 'biweekly':
+            return addDays(from, 14);
         case 'monthly':
             return addMonths(from, 1);
         case 'yearly':
@@ -85,6 +87,16 @@ function alignToCadence(cadence: Cadence, startsOn: string): string {
         case 'daily':
             return startsOn;
         case 'weekly': {
+            const d = ymdToUtc(startsOn);
+            const dow = d.getUTCDay();
+            const delta = (cadence.dayOfWeek - dow + 7) % 7;
+            return addDays(startsOn, delta);
+        }
+        case 'biweekly': {
+            // Same snap as weekly — startsOn itself anchors the
+            // every-other-week phase. Subsequent occurrences add 14 days
+            // each (see `advance`), so this alignment is enough to fix
+            // the parity.
             const d = ymdToUtc(startsOn);
             const dow = d.getUTCDay();
             const delta = (cadence.dayOfWeek - dow + 7) % 7;
