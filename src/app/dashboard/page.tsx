@@ -16,7 +16,12 @@ import { nextDueOn } from '@/domains/recurring-templates';
 import { materializeDueTemplates } from '@/lib/recurring-materialize';
 import type { ActivityDoc } from '@/domains/activity';
 import type { SorcUUID } from '@event-sorcerer/core';
-import { IncomeExpenseBar, SpendingDonut } from './charts';
+import {
+    IncomeExpenseBar,
+    NetWorthLine,
+    SpendingDonut,
+    SpendingHeatmap,
+} from './charts';
 import { TenantFilter, type TenantFilterOption } from './tenant-filter';
 
 const TENANT_GRID_LIMIT = 6;
@@ -286,6 +291,98 @@ export default async function DashboardPage({
               .filter((row) => row.value > 0)
         : [];
 
+    // ----- Net-worth: last-12-months retrospective -----
+    // Anchor today's net worth on the live accountBalance read model,
+    // then walk monthlyAggregate backwards to derive past month-end
+    // balances. net(month) = income - expense; transfers cancel out
+    // so they don't affect totals.
+    const liveNetWorth = accountBalances.reduce(
+        (s, b) => s + b.balance,
+        0,
+    );
+    const twelveMonths: Array<{ key: string; label: string }> = [];
+    {
+        const base = new Date(Date.UTC(year, month - 1, 1));
+        for (let i = 11; i >= 0; i--) {
+            const d = new Date(
+                Date.UTC(base.getUTCFullYear(), base.getUTCMonth() - i, 1),
+            );
+            const y = d.getUTCFullYear();
+            const m = d.getUTCMonth() + 1;
+            twelveMonths.push({
+                key: `${y}-${String(m).padStart(2, '0')}`,
+                label: d.toLocaleString(undefined, {
+                    month: 'short',
+                    timeZone: 'UTC',
+                }),
+            });
+        }
+    }
+    const twelveMonthAggs = currentTenantId
+        ? await Promise.all(
+              twelveMonths.map(async ({ key }) => {
+                  const [agg] = await readModels.monthlyAggregate.find({
+                      aggregateKey: `${currentTenantId}:${key}`,
+                  });
+                  return { key, agg };
+              }),
+          )
+        : [];
+    // Build forward-walking balance: start = liveNetWorth minus the
+    // current (incomplete) month's net to get end-of-last-month.
+    // Then subtract each prior month's net to step backwards.
+    const netByMonth = twelveMonthAggs.map(
+        ({ agg }) => (agg?.income ?? 0) - (agg?.expense ?? 0),
+    );
+    const netWorthSeries: Array<{ label: string; balance: number }> = [];
+    {
+        let running = liveNetWorth;
+        // Walk newest → oldest: balance at end of month i = running.
+        // For the current month (index 11), the live balance already
+        // reflects that month's transactions, so we record it as-is.
+        // For prior months we subtract that month's net.
+        const seriesReverse: Array<{ label: string; balance: number }> = [];
+        for (let i = twelveMonths.length - 1; i >= 0; i--) {
+            seriesReverse.push({
+                label: twelveMonths[i]!.label,
+                balance: running,
+            });
+            running = running - netByMonth[i]!;
+        }
+        netWorthSeries.push(...seriesReverse.reverse());
+    }
+
+    // ----- Daily spending heatmap (last 84 days = 12 weeks) -----
+    const heatmapDays = 84;
+    const heatmapMap = new Map<string, number>();
+    {
+        const start = new Date();
+        start.setUTCHours(0, 0, 0, 0);
+        start.setUTCDate(start.getUTCDate() - (heatmapDays - 1));
+        for (let i = 0; i < heatmapDays; i++) {
+            const d = new Date(start);
+            d.setUTCDate(start.getUTCDate() + i);
+            heatmapMap.set(d.toISOString().slice(0, 10), 0);
+        }
+    }
+    if (currentTenantId) {
+        const txs = await readModels.transactions.find({
+            tenantId: currentTenantId,
+        });
+        for (const t of txs) {
+            if (t.isDeleted) continue;
+            if (t.transactionType !== 'expense') continue;
+            if (!heatmapMap.has(t.occurredOn)) continue;
+            heatmapMap.set(
+                t.occurredOn,
+                (heatmapMap.get(t.occurredOn) ?? 0) + t.amount,
+            );
+        }
+    }
+    const heatmapData = Array.from(heatmapMap.entries())
+        .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+        .map(([ymd, expense]) => ({ ymd, expense }));
+
     const budgets = currentTenantId
         ? (
               await readModels.budgetsByTenant.find({
@@ -496,36 +593,68 @@ export default async function DashboardPage({
             ) : null}
 
             {currentTenantId ? (
-                <section className="grid gap-4 md:grid-cols-2">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Income vs expense</CardTitle>
-                            <p className="text-xs text-muted-foreground">
-                                Last 6 months
-                            </p>
-                        </CardHeader>
-                        <CardContent>
-                            <IncomeExpenseBar
-                                data={incomeExpenseSeries}
-                                currency={monthlyCurrency}
-                            />
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Spending by category</CardTitle>
-                            <p className="text-xs text-muted-foreground">
-                                This month
-                            </p>
-                        </CardHeader>
-                        <CardContent>
-                            <SpendingDonut
-                                data={donutData}
-                                currency={monthlyCurrency}
-                            />
-                        </CardContent>
-                    </Card>
-                </section>
+                <>
+                    <section className="grid gap-4 md:grid-cols-2">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Income vs expense</CardTitle>
+                                <p className="text-xs text-muted-foreground">
+                                    Last 6 months
+                                </p>
+                            </CardHeader>
+                            <CardContent>
+                                <IncomeExpenseBar
+                                    data={incomeExpenseSeries}
+                                    currency={monthlyCurrency}
+                                />
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Spending by category</CardTitle>
+                                <p className="text-xs text-muted-foreground">
+                                    This month
+                                </p>
+                            </CardHeader>
+                            <CardContent>
+                                <SpendingDonut
+                                    data={donutData}
+                                    currency={monthlyCurrency}
+                                />
+                            </CardContent>
+                        </Card>
+                    </section>
+                    <section className="grid gap-4 md:grid-cols-2">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Net worth</CardTitle>
+                                <p className="text-xs text-muted-foreground">
+                                    Last 12 months
+                                </p>
+                            </CardHeader>
+                            <CardContent>
+                                <NetWorthLine
+                                    data={netWorthSeries}
+                                    currency={monthlyCurrency}
+                                />
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Daily spending</CardTitle>
+                                <p className="text-xs text-muted-foreground">
+                                    Last 12 weeks
+                                </p>
+                            </CardHeader>
+                            <CardContent>
+                                <SpendingHeatmap
+                                    days={heatmapData}
+                                    currency={monthlyCurrency}
+                                />
+                            </CardContent>
+                        </Card>
+                    </section>
+                </>
             ) : null}
 
             {currentTenantId && topSpending.length > 0 ? (
