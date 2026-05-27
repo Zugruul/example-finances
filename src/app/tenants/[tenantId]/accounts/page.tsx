@@ -18,6 +18,7 @@ import { BreadcrumbBar } from '@/components/breadcrumb-bar';
 import { FilterTabs } from '@/components/filter-tabs';
 import { WalletIcon } from 'lucide-react';
 import { formatMoney } from '@/lib/money';
+import type { SorcUUID } from '@event-sorcerer/core';
 
 type Params = { tenantId: string };
 type SearchParams = { view?: string };
@@ -56,6 +57,11 @@ export default async function AccountsListPage(props: {
     const canManage = memberships.some(
         (m) => m.role === 'owner' || m.role === 'admin',
     );
+
+    const profile = userId
+        ? await readModels.usersById.findOne({ userId: userId as SorcUUID })
+        : null;
+    const defaultCurrency = profile?.defaultCurrency ?? 'USD';
 
     const create = createAccountAction.bind(null, tenantId);
 
@@ -225,7 +231,7 @@ export default async function AccountsListPage(props: {
                                     id="currency"
                                     name="currency"
                                     required
-                                    defaultValue="USD"
+                                    defaultValue={defaultCurrency}
                                     maxLength={3}
                                     pattern="[A-Za-z]{3}"
                                     className="uppercase"

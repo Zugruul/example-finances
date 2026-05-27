@@ -6,6 +6,7 @@ import {
     BarChart3Icon,
     BuildingIcon,
     CalendarClockIcon,
+    CheckIcon,
     FolderTreeIcon,
     GaugeIcon,
     LayoutDashboardIcon,
@@ -45,6 +46,7 @@ export type AppSidebarProps = {
     activeTenantId: string | undefined;
     isAdmin: boolean;
     email: string;
+    renderTenantsAsList: boolean;
 };
 
 type NavItem = {
@@ -135,11 +137,23 @@ export function AppSidebar({
     activeTenantId,
     isAdmin,
     email,
+    renderTenantsAsList,
 }: AppSidebarProps) {
     const pathname = usePathname() ?? '';
 
+    // Precedence for the active tenant used by the Workspace nav hrefs:
+    //   1. pathname (when on a `/tenants/[id]/...` route)
+    //   2. activeTenantId prop (resolved from the `finances.last-tenant`
+    //      cookie by AppShell — set on every tenant-page render)
+    //   3. tenants[0] (Personal / first by membership)
+    const pathTenantMatch = pathname.match(/^\/tenants\/([^/]+)/);
+    const pathTenantId = pathTenantMatch?.[1];
+    const isMember = (id: string | undefined) =>
+        !!id && tenants.some((t) => t.tenantId === id);
     const tenantId =
-        activeTenantId ?? (tenants.length > 0 ? tenants[0].tenantId : undefined);
+        (isMember(pathTenantId) ? pathTenantId : undefined) ??
+        (isMember(activeTenantId) ? activeTenantId : undefined) ??
+        (tenants.length > 0 ? tenants[0].tenantId : undefined);
 
     return (
         <Sidebar collapsible="icon">
@@ -153,11 +167,12 @@ export function AppSidebar({
                         Finances
                     </Link>
                 </div>
-                <SidebarGroup className="px-0 py-0 group-data-[collapsible=icon]:hidden">
+                <SidebarGroup className="group-data-[collapsible=icon]:hidden">
                     <SidebarGroupLabel
                         render={<Link href="/tenants">Tenants</Link>}
                     />
                     <SidebarGroupAction
+                        className="text-sidebar-foreground/70 hover:text-sidebar-foreground"
                         render={
                             <Link href="/tenants/new" aria-label="New tenant">
                                 <PlusIcon />
@@ -179,31 +194,40 @@ export function AppSidebar({
                                 />
                             </SidebarMenuItem>
                         </SidebarMenu>
-                    ) : tenants.length === 1 ? (
+                    ) : renderTenantsAsList ? (
                         <SidebarMenu>
-                            <SidebarMenuItem>
-                                <SidebarMenuButton
-                                    isActive={
-                                        tenantId === tenants[0].tenantId &&
-                                        pathname.startsWith(
-                                            `/tenants/${tenants[0].tenantId}`,
-                                        )
-                                    }
-                                    render={
-                                        <Link
-                                            href={`/tenants/${tenants[0].tenantId}`}
-                                        >
-                                            <BuildingIcon />
-                                            <span
-                                                className="truncate"
-                                                title={tenants[0].displayName}
-                                            >
-                                                {tenants[0].displayName}
-                                            </span>
-                                        </Link>
-                                    }
-                                />
-                            </SidebarMenuItem>
+                            {tenants.map((t) => {
+                                const isActive = pathname.startsWith(
+                                    `/tenants/${t.tenantId}`,
+                                );
+                                return (
+                                    <SidebarMenuItem key={t.tenantId}>
+                                        <SidebarMenuButton
+                                            isActive={isActive}
+                                            render={
+                                                <Link
+                                                    href={`/tenants/${t.tenantId}`}
+                                                >
+                                                    <CheckIcon
+                                                        aria-hidden
+                                                        className={
+                                                            isActive
+                                                                ? ''
+                                                                : 'opacity-0'
+                                                        }
+                                                    />
+                                                    <span
+                                                        className="truncate"
+                                                        title={t.displayName}
+                                                    >
+                                                        {t.displayName}
+                                                    </span>
+                                                </Link>
+                                            }
+                                        />
+                                    </SidebarMenuItem>
+                                );
+                            })}
                         </SidebarMenu>
                     ) : (
                         <AppShellTenantSelector tenants={tenants} />

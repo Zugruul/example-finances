@@ -5,10 +5,7 @@ import { MongoDBAdapter } from '@auth/mongodb-adapter';
 import { v7 as uuidv7 } from 'uuid';
 import { FINANCES_DB, getSharedMongoClientPromise } from '@/lib/mongo';
 import { aggregates, readModels } from '@/sorc';
-import type {
-    AdminActionsStreamInstance,
-    PlatformRoleStreamInstance,
-} from '@/domains/admin';
+import type { AdminActionsStreamInstance } from '@/domains/admin';
 import type {
     TenantStreamInstance,
     MembershipStreamInstance,
@@ -31,10 +28,6 @@ export const SESSION_TOKEN_COOKIE_NAME = isProd
 // models — see `src/lib/mongo.ts`. Re-exported for callers that already used
 // `authMongoClientPromise` (impersonation helpers, lib/auth-users, etc.).
 export const authMongoClientPromise = getSharedMongoClientPromise();
-
-function platformRoleStream(userId: string): PlatformRoleStreamInstance {
-    return `platform-role-${userId}` as PlatformRoleStreamInstance;
-}
 
 function userStream(userId: string): UserStreamInstance {
     return `user-${userId}` as UserStreamInstance;
@@ -193,12 +186,9 @@ export const authConfig: NextAuthConfig = {
                 isNewUser,
             });
 
-            // First-user-is-admin bootstrap: when a brand-new user signs in
-            // AND the platform-roles read model is empty, auto-grant admin.
-            // The stream-existence check via the aggregate's optimistic
-            // concurrency guard handles double-fire racing across two
-            // simultaneous first sign-ins (the second emit would target a
-            // non-empty stream → no-op via the idempotency guard).
+            // Platform-admin is granted exclusively via the `grant-admin`
+            // CLI skill (see `.claude/skills/grant-admin.md` and
+            // `pnpm admin:grant <email>`). No auto-grant on sign-in.
             if (!user.id) return;
 
             // Bootstrap per-app user profile (separate from Auth.js user
@@ -309,36 +299,6 @@ export const authConfig: NextAuthConfig = {
                 console.error('[auth] personal-tenant bootstrap failed', err);
             }
 
-            if (!isNewUser) return;
-
-            try {
-                const existing = await readModels.platformRoles.find({});
-                if (existing.length > 0) return;
-
-                const targetUserId = user.id as SorcUUID;
-                const stream = platformRoleStream(targetUserId);
-                // First-user bootstrap: the user grants themselves
-                // admin via the synthetic `'system'` actor on the
-                // command, but the envelope actor is the user — there
-                // is no separate admin at this point.
-                await requestContext.run({ actor: targetUserId }, async () => {
-                    await aggregates.platformRole.execute(
-                        'grantAdmin',
-                        {
-                            targetUserId,
-                            grantedByUserId: 'system' as SorcUUID,
-                            reason: 'First user (auto-bootstrap)',
-                            stream,
-                        } as never,
-                        { store: 'mongostore' as never, stream },
-                    );
-                });
-                console.info(
-                    `[auth] First user ${user.email ?? user.id} auto-granted admin (bootstrap).`,
-                );
-            } catch (err) {
-                console.error('[auth] platform-role bootstrap failed', err);
-            }
         },
     },
 };

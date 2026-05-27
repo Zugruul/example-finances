@@ -55,6 +55,33 @@ export class UserDeletedPayload extends SorcPayload {
     deletedAt!: Date;
 }
 
+@domain('users')
+export class UserDefaultCurrencyChangedPayload extends SorcPayload {
+    @property({ type: 'uuid', required: true })
+    userId!: SorcUUID;
+
+    @property({ type: 'string', required: true })
+    currency!: string;
+
+    @property({ type: 'date', required: true })
+    changedAt!: Date;
+}
+
+@domain('users')
+export class UserTenantSelectorPrefChangedPayload extends SorcPayload {
+    @property({ type: 'uuid', required: true })
+    userId!: SorcUUID;
+
+    @property({ type: 'string', required: true })
+    mode!: string;
+
+    @property({ type: 'number' })
+    threshold?: number;
+
+    @property({ type: 'date', required: true })
+    changedAt!: Date;
+}
+
 // ----- events -----
 
 @domain('users')
@@ -102,8 +129,40 @@ export class UserDeletedEvent extends SorcBaseEvent {
     }
 }
 
+@domain('users')
+export class UserDefaultCurrencyChangedEvent extends SorcBaseEvent {
+    readonly name = 'UserDefaultCurrencyChanged' as const;
+    readonly version = '2026-05-27' as const;
+    publishedAt: Date | null = null;
+    revision: bigint | null = null;
+
+    constructor(
+        public stream: UserStreamInstance,
+        public payload: UserDefaultCurrencyChangedPayload,
+    ) {
+        super();
+    }
+}
+
+@domain('users')
+export class UserTenantSelectorPrefChangedEvent extends SorcBaseEvent {
+    readonly name = 'UserTenantSelectorPrefChanged' as const;
+    readonly version = '2026-05-27' as const;
+    publishedAt: Date | null = null;
+    revision: bigint | null = null;
+
+    constructor(
+        public stream: UserStreamInstance,
+        public payload: UserTenantSelectorPrefChangedPayload,
+    ) {
+        super();
+    }
+}
+
 export const userEvents = [
     UserCreatedEvent,
     UserProfileUpdatedEvent,
     UserDeletedEvent,
+    UserDefaultCurrencyChangedEvent,
+    UserTenantSelectorPrefChangedEvent,
 ] as const;

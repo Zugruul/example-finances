@@ -1,6 +1,9 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
+import { readModels } from '@/sorc';
+import { updateDefaultCurrencyAction } from '@/server/users';
 import { BreadcrumbBar } from '@/components/breadcrumb-bar';
+import { Button } from '@/components/ui/button';
 import {
     Card,
     CardContent,
@@ -8,36 +11,93 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { TenantSelectorPrefForm } from '@/components/tenant-selector-pref-form';
+import { resolveTenantSelectorPref } from '@/lib/tenant-selector-pref';
+import type { SorcUUID } from '@event-sorcerer/core';
+
+const CURRENCY_OPTIONS = [
+    'USD',
+    'EUR',
+    'GBP',
+    'JPY',
+    'BRL',
+    'CAD',
+    'AUD',
+    'INR',
+    'CNY',
+    'CHF',
+] as const;
 
 export default async function SettingsPage() {
     const session = await auth();
     if (!session?.user?.id) redirect('/auth/signin');
+
+    const userId = session.user.id as SorcUUID;
+    const profile = await readModels.usersById.findOne({ userId });
+    const currentCurrency = profile?.defaultCurrency ?? 'USD';
+    const selectorPref = resolveTenantSelectorPref(profile?.tenantSelectorPref);
 
     return (
         <main className="mx-auto flex min-h-[60vh] max-w-2xl flex-col gap-6 p-8">
             <BreadcrumbBar items={[{ label: 'Settings' }]} />
             <div>
                 <h1 className="text-2xl font-semibold tracking-tight">
-                    Settings · coming soon
+                    Settings
                 </h1>
                 <p className="text-sm text-muted-foreground">
-                    Account preferences and per-tenant defaults will land here.
+                    Personal preferences applied across your tenants.
                 </p>
             </div>
 
             <Card>
                 <CardHeader>
-                    <CardTitle>Preferences</CardTitle>
+                    <CardTitle>Default currency</CardTitle>
                     <CardDescription>
-                        Nothing to configure yet — this section will host
-                        notification, locale, and default-tenant settings in a
-                        future release.
+                        Pre-fills the currency field when you create a new
+                        account. Existing accounts keep their original
+                        currency.
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <p className="text-sm text-muted-foreground">
-                        Stay tuned.
-                    </p>
+                    <form
+                        action={updateDefaultCurrencyAction}
+                        className="flex flex-col gap-4 sm:flex-row sm:items-end"
+                    >
+                        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                            <Label htmlFor="currency">Currency</Label>
+                            <select
+                                id="currency"
+                                name="currency"
+                                defaultValue={currentCurrency}
+                                className="h-9 rounded-md border bg-background px-3 text-sm"
+                            >
+                                {CURRENCY_OPTIONS.map((code) => (
+                                    <option key={code} value={code}>
+                                        {code}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <Button type="submit">Save</Button>
+                    </form>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Tenant selector</CardTitle>
+                    <CardDescription>
+                        Choose how your tenants appear in the sidebar. With
+                        the threshold option, small tenant lists render as
+                        rows and larger lists collapse into a dropdown.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <TenantSelectorPrefForm
+                        currentMode={selectorPref.mode}
+                        currentThreshold={selectorPref.threshold ?? 3}
+                    />
                 </CardContent>
             </Card>
         </main>

@@ -3,7 +3,10 @@ import {
     type UserCreatedEvent,
     type UserProfileUpdatedEvent,
     type UserDeletedEvent,
+    type UserDefaultCurrencyChangedEvent,
+    type UserTenantSelectorPrefChangedEvent,
 } from './user.events';
+import type { TenantSelectorMode, TenantSelectorPref } from './user.aggregate';
 
 /**
  * `usersById` — per-user profile keyed by `userId`. PII fields surface
@@ -20,6 +23,8 @@ export type UserByIdDoc = {
     lastName?: string;
     phoneNumber?: string;
     address?: string;
+    defaultCurrency?: string;
+    tenantSelectorPref?: TenantSelectorPref;
     createdAt: Date;
     updatedAt?: Date;
     deletedAt?: Date;
@@ -29,18 +34,24 @@ export type UsersByIdListenEvents = readonly [
     { readonly name: 'UserCreated'; readonly version: '*' },
     { readonly name: 'UserProfileUpdated'; readonly version: '*' },
     { readonly name: 'UserDeleted'; readonly version: '*' },
+    { readonly name: 'UserDefaultCurrencyChanged'; readonly version: '*' },
+    { readonly name: 'UserTenantSelectorPrefChanged'; readonly version: '*' },
 ];
 
 export const usersByIdListen: UsersByIdListenEvents = [
     { name: 'UserCreated', version: '*' },
     { name: 'UserProfileUpdated', version: '*' },
     { name: 'UserDeleted', version: '*' },
+    { name: 'UserDefaultCurrencyChanged', version: '*' },
+    { name: 'UserTenantSelectorPrefChanged', version: '*' },
 ] as const;
 
 type UsersApplyEvent =
     | InstanceType<typeof UserCreatedEvent>
     | InstanceType<typeof UserProfileUpdatedEvent>
-    | InstanceType<typeof UserDeletedEvent>;
+    | InstanceType<typeof UserDeletedEvent>
+    | InstanceType<typeof UserDefaultCurrencyChangedEvent>
+    | InstanceType<typeof UserTenantSelectorPrefChangedEvent>;
 
 export function usersByIdKey(event: UsersApplyEvent) {
     return { userId: event.payload.userId };
@@ -70,6 +81,20 @@ export function usersByIdApply(
         case 'UserDeleted':
             return state
                 ? { ...state, deletedAt: event.payload.deletedAt }
+                : state;
+        case 'UserDefaultCurrencyChanged':
+            return state
+                ? { ...state, defaultCurrency: event.payload.currency }
+                : state;
+        case 'UserTenantSelectorPrefChanged':
+            return state
+                ? {
+                      ...state,
+                      tenantSelectorPref: {
+                          mode: event.payload.mode as TenantSelectorMode,
+                          threshold: event.payload.threshold,
+                      },
+                  }
                 : state;
         default:
             return state;

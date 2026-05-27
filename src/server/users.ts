@@ -50,3 +50,67 @@ export const updateProfileAction = withActorContext(
         redirect(withToast('/profile', 'success', 'Profile updated'));
     },
 );
+
+export const updateDefaultCurrencyAction = withActorContext(
+    async (formData: FormData) => {
+        const session = await requireSession();
+        const userId = session.user!.id as SorcUUID;
+        const currency = String(formData.get('currency') ?? '')
+            .trim()
+            .toUpperCase();
+        if (!/^[A-Z]{3}$/.test(currency)) {
+            throw new Error(
+                'Currency must be a 3-letter ISO-4217 code (e.g. USD).',
+            );
+        }
+
+        const stream = userStream(userId);
+        await aggregates.users.execute(
+            'setDefaultCurrency',
+            { currency, stream } as never,
+            { store: 'mongostore' as never, stream },
+        );
+
+        revalidatePath('/settings');
+        redirect(
+            withToast('/settings', 'success', `Default currency set to ${currency}`),
+        );
+    },
+);
+
+export const updateTenantSelectorPrefAction = withActorContext(
+    async (formData: FormData) => {
+        const session = await requireSession();
+        const userId = session.user!.id as SorcUUID;
+        const rawMode = String(formData.get('mode') ?? '').trim();
+        if (
+            rawMode !== 'list' &&
+            rawMode !== 'dropdown' &&
+            rawMode !== 'threshold'
+        ) {
+            throw new Error(
+                'Tenant selector mode must be list, dropdown, or threshold.',
+            );
+        }
+        let threshold: number | undefined;
+        if (rawMode === 'threshold') {
+            const raw = String(formData.get('threshold') ?? '').trim();
+            const parsed = Number.parseInt(raw, 10);
+            if (!Number.isInteger(parsed) || parsed < 1 || parsed > 5) {
+                throw new Error('Threshold must be an integer between 1 and 5.');
+            }
+            threshold = parsed;
+        }
+
+        const stream = userStream(userId);
+        await aggregates.users.execute(
+            'setTenantSelectorPref',
+            { mode: rawMode, threshold, stream } as never,
+            { store: 'mongostore' as never, stream },
+        );
+
+        revalidatePath('/settings');
+        revalidatePath('/dashboard');
+        redirect(withToast('/settings', 'success', 'Tenant selector updated'));
+    },
+);

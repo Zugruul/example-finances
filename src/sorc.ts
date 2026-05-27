@@ -269,6 +269,8 @@ function buildSorc(metrics: ReturnType<typeof metricsPrometheus>) {
                 { name: 'UserCreated', version: '*' },
                 { name: 'UserProfileUpdated', version: '*' },
                 { name: 'UserDeleted', version: '*' },
+                { name: 'UserDefaultCurrencyChanged', version: '*' },
+                { name: 'UserTenantSelectorPrefChanged', version: '*' },
             ],
             initial: null as ReturnType<typeof userReducer>,
             reducer: userReducer as never,

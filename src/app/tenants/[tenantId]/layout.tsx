@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { readModels } from '@/sorc';
+import { writeLastTenantCookie } from '@/lib/last-tenant-cookie';
 
 export default async function TenantLayout({
     children,
@@ -28,6 +29,20 @@ export default async function TenantLayout({
         if (session.user.isAdmin !== true) {
             redirect('/tenants');
         }
+    }
+
+    // Remember the last tenant the user navigated into so global routes
+    // (/dashboard, /settings, /profile) can resolve workspace-nav hrefs
+    // back to it. Next 16 only permits cookies().set in Server Actions,
+    // Route Handlers, and the *root* layout/proxy chain during a
+    // navigation. Setting from a nested layout during a render works in
+    // practice but Next has flagged it as undefined-behavior in some
+    // releases; swallow errors so a future Next upgrade can't break the
+    // tenant gate.
+    try {
+        await writeLastTenantCookie(tenantId);
+    } catch {
+        // ignore — sidebar gracefully falls back to myTenantIds[0]
     }
 
     return <>{children}</>;

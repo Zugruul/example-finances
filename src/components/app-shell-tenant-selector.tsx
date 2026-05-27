@@ -35,16 +35,16 @@ export function AppShellTenantSelector({
                     <Button
                         variant="ghost"
                         size="sm"
-                        className="gap-1.5"
+                        className="w-full justify-between gap-1.5"
                         aria-label="Switch tenant"
                     >
                         <span
-                            className="max-w-[12rem] truncate md:max-w-[18rem] lg:max-w-[24rem]"
+                            className="min-w-0 flex-1 truncate text-left"
                             title={label}
                         >
                             {label}
                         </span>
-                        <ChevronDownIcon className="size-4 opacity-60" />
+                        <ChevronDownIcon className="size-4 shrink-0 opacity-60" />
                     </Button>
                 }
             />
