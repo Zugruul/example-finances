@@ -1,5 +1,6 @@
 import { createTenantAction } from '@/server/tenants';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/submit-button';
 import {
     Card,
     CardContent,
@@ -47,7 +48,7 @@ export default function NewTenantPage() {
                                 placeholder="Operating budget tracker"
                             />
                         </div>
-                        <Button type="submit">Create tenant</Button>
+                        <SubmitButton pendingLabel="Creating…">Create tenant</SubmitButton>
                     </form>
                 </CardContent>
             </Card>

@@ -9,6 +9,7 @@ import {
 } from '@/server/recurring';
 import { nextDueOn } from '@/domains/recurring-templates';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/submit-button';
 import {
     Card,
     CardContent,
@@ -121,9 +122,12 @@ export default async function RecurringPage(props: {
                 </div>
                 {canMaterialize ? (
                     <form action={materialize}>
-                        <Button type="submit" variant="outline">
+                        <SubmitButton
+                            variant="outline"
+                            pendingLabel="Materializing…"
+                        >
                             Materialize due
-                        </Button>
+                        </SubmitButton>
                     </form>
                 ) : null}
             </header>
@@ -426,7 +430,7 @@ export default async function RecurringPage(props: {
                                 />
                             </div>
                             <div className="sm:col-span-2">
-                                <Button type="submit">Create template</Button>
+                                <SubmitButton pendingLabel="Creating…">Create template</SubmitButton>
                             </div>
                         </form>
                     </CardContent>

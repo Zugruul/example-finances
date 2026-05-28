@@ -10,6 +10,7 @@ import {
 } from '@/server/categories';
 import type { CategoryDoc } from '@/domains/categories';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/submit-button';
 import {
     Card,
     CardContent,
@@ -367,7 +368,7 @@ export default async function CategoriesPage(props: {
                                 />
                             </div>
                             <div className="sm:col-span-2">
-                                <Button type="submit">Create category</Button>
+                                <SubmitButton pendingLabel="Creating…">Create category</SubmitButton>
                             </div>
                         </form>
                     </CardContent>

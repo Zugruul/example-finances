@@ -7,6 +7,7 @@ import {
     updateTransactionAction,
 } from '@/server/transactions';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/submit-button';
 import {
     Card,
     CardContent,
@@ -167,7 +168,7 @@ export default async function TransactionDetailPage(props: {
                                 </select>
                             </div>
                             <div className="sm:col-span-2">
-                                <Button type="submit">Save</Button>
+                                <SubmitButton pendingLabel="Saving…">Save</SubmitButton>
                             </div>
                         </form>
                     </CardContent>

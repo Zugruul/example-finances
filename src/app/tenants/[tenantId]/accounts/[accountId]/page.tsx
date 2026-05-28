@@ -8,6 +8,7 @@ import {
     renameAccountAction,
 } from '@/server/accounts';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/submit-button';
 import {
     Card,
     CardContent,
@@ -192,7 +193,7 @@ export default async function AccountDetailPage(props: {
                                 required
                                 maxLength={120}
                             />
-                            <Button type="submit">Save</Button>
+                            <SubmitButton pendingLabel="Saving…">Save</SubmitButton>
                         </form>
                     </CardContent>
                 </Card>

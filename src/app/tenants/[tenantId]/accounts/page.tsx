@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { readModels } from '@/sorc';
 import { createAccountAction } from '@/server/accounts';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/submit-button';
 import {
     Card,
     CardContent,
@@ -251,7 +252,7 @@ export default async function AccountsListPage(props: {
                                 />
                             </div>
                             <div className="sm:col-span-2">
-                                <Button type="submit">Create account</Button>
+                                <SubmitButton pendingLabel="Creating…">Create account</SubmitButton>
                             </div>
                         </form>
                     </CardContent>

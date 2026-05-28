@@ -7,6 +7,7 @@ import {
     renameTenantAction,
 } from '@/server/tenants';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/submit-button';
 import {
     Card,
     CardContent,
@@ -81,7 +82,7 @@ export default async function TenantDetailPage(props: {
                                 required
                                 maxLength={120}
                             />
-                            <Button type="submit">Save</Button>
+                            <SubmitButton pendingLabel="Saving…">Save</SubmitButton>
                         </form>
                     </CardContent>
                 </Card>
@@ -161,9 +162,12 @@ export default async function TenantDetailPage(props: {
                                     <option value="admin">admin</option>
                                 </select>
                             </div>
-                            <Button type="submit" className="self-end">
+                            <SubmitButton
+                                className="self-end"
+                                pendingLabel="Inviting…"
+                            >
                                 Invite
-                            </Button>
+                            </SubmitButton>
                         </form>
                     </CardContent>
                 </Card>

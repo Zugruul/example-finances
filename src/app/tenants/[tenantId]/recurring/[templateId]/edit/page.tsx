@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { readModels } from '@/sorc';
 import { updateTemplateAction } from '@/server/recurring';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/submit-button';
 import {
     Card,
     CardContent,
@@ -237,7 +238,7 @@ export default async function EditTemplatePage(props: {
                         </div>
 
                         <div className="flex items-center gap-3 sm:col-span-2">
-                            <Button type="submit">Save</Button>
+                            <SubmitButton pendingLabel="Saving…">Save</SubmitButton>
                             <Link
                                 href={`/tenants/${tenantId}/recurring`}
                                 className="text-sm text-muted-foreground hover:underline"

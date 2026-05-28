@@ -4,6 +4,7 @@ import { readModels } from '@/sorc';
 import { updateProfileAction } from '@/server/users';
 import { BreadcrumbBar } from '@/components/breadcrumb-bar';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/submit-button';
 import {
     Card,
     CardContent,
@@ -94,7 +95,7 @@ export default async function ProfilePage() {
                             />
                         </div>
                         <div className="flex justify-end">
-                            <Button type="submit">Save changes</Button>
+                            <SubmitButton pendingLabel="Saving…">Save changes</SubmitButton>
                         </div>
                     </form>
                 </CardContent>

@@ -8,6 +8,7 @@ import {
     updateBudgetAction,
 } from '@/server/budgets';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/submit-button';
 import {
     Card,
     CardContent,
@@ -353,7 +354,7 @@ export default async function BudgetsPage(props: {
                                 </select>
                             </div>
                             <div className="sm:col-span-2">
-                                <Button type="submit">Create budget</Button>
+                                <SubmitButton pendingLabel="Creating…">Create budget</SubmitButton>
                             </div>
                         </form>
                     </CardContent>

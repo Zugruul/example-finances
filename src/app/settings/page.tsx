@@ -6,6 +6,7 @@ import { readModels } from '@/sorc';
 import { updateDefaultCurrencyAction } from '@/server/users';
 import { BreadcrumbBar } from '@/components/breadcrumb-bar';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/submit-button';
 import {
     Card,
     CardContent,
@@ -90,7 +91,7 @@ export default async function SettingsPage() {
                                 ))}
                             </select>
                         </div>
-                        <Button type="submit">Save</Button>
+                        <SubmitButton pendingLabel="Saving…">Save</SubmitButton>
                     </form>
                 </CardContent>
             </Card>
