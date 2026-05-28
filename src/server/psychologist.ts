@@ -179,6 +179,73 @@ export const schedulePsychologistSessionAction = withActorContext(
             } as never,
             { store: 'mongostore' as never, stream },
         );
+
+        // Cross-module hook: if the Communication module is installed
+        // on this tenant AND the user opted in via the form's
+        // reminder fields, schedule a CommunicationReminder linked
+        // back to the new session.
+        const reminderHoursRaw = String(
+            formData.get('reminderHoursBefore') ?? '',
+        ).trim();
+        const reminderChannel = String(
+            formData.get('reminderChannel') ?? '',
+        ).trim();
+        if (reminderHoursRaw && reminderChannel) {
+            try {
+                const moduleInstall = await readModels.tenantModules.findOne({
+                    aggregateKey: `${tenantId}|communication`,
+                });
+                if (moduleInstall?.status === 'installed') {
+                    const [client] =
+                        await readModels.psychologistClients.find({
+                            clientId: clientId as SorcUUID,
+                        });
+                    const recipientLabel =
+                        reminderChannel === 'email'
+                            ? client?.email
+                            : client?.phone;
+                    const hoursBefore = Number(reminderHoursRaw);
+                    if (
+                        recipientLabel &&
+                        Number.isFinite(hoursBefore) &&
+                        hoursBefore > 0
+                    ) {
+                        const sendAt = new Date(
+                            startsAt.getTime() -
+                                hoursBefore * 60 * 60 * 1000,
+                        );
+                        const reminderId = uuidv7() as SorcUUID;
+                        const reminderStream =
+                            `communication-reminder-${reminderId}` as never;
+                        await aggregates.communicationReminder.execute(
+                            'scheduleCommunicationReminder',
+                            {
+                                reminderId,
+                                tenantId: tenantId as SorcUUID,
+                                sendAt,
+                                channel: reminderChannel,
+                                recipientLabel,
+                                message: `Reminder: your session is at ${startsAt.toLocaleString()}.`,
+                                linkedEntityKind: 'psychologist-session',
+                                linkedEntityId: sessionId,
+                                scheduledByUserId: actorId,
+                                stream: reminderStream,
+                            } as never,
+                            {
+                                store: 'mongostore' as never,
+                                stream: reminderStream,
+                            },
+                        );
+                    }
+                }
+            } catch (err) {
+                console.warn(
+                    '[psychologist] cross-module reminder schedule failed',
+                    err,
+                );
+            }
+        }
+
         revalidatePath(`/tenants/${tenantId}/psychologist/sessions`);
         redirect(
             withToast(

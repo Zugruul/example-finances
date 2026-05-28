@@ -42,10 +42,33 @@ export default async function PsychologistSessionsPage(props: {
         (m) => m.role === 'owner' || m.role === 'admin' || m.role === 'member',
     );
 
-    const [clients, sessions] = await Promise.all([
+    const [clients, sessions, commInstall, integrations] = await Promise.all([
         readModels.psychologistClients.find({ tenantId }),
         readModels.psychologistSessions.find({ tenantId }),
+        readModels.tenantModules.findOne({
+            aggregateKey: `${tenantId}|communication`,
+        }),
+        readModels.communicationIntegrations.find({ tenantId }),
     ]);
+    // Cross-module: reminder fields only render when Communication is
+    // installed + has at least one enabled integration. Reachable
+    // channels are the union of every enabled integration's
+    // capabilities, filtered to the ones the user-facing picker
+    // exposes (email/sms/whatsapp/telegram cover the common cases).
+    const { PROVIDER_CHANNELS } = await import('@/domains/communication');
+    const reachable = new Set<string>();
+    for (const i of integrations) {
+        if (i.status !== 'enabled') continue;
+        for (const c of PROVIDER_CHANNELS[i.provider] ?? []) {
+            reachable.add(c);
+        }
+    }
+    const reminderChannels = ['email', 'sms', 'whatsapp', 'telegram'].filter(
+        (c) => reachable.has(c),
+    );
+    const remindersAvailable =
+        commInstall?.status === 'installed' && reminderChannels.length > 0;
+
     const activeClients = clients.filter((c) => !c.isArchived);
     const clientById = new Map(
         clients.map((c) => [String(c.clientId), c]),
@@ -270,6 +293,49 @@ export default async function PsychologistSessionsPage(props: {
                                     placeholder="Office room 2 / video link auto-generated for telehealth"
                                 />
                             </div>
+                            {remindersAvailable ? (
+                                <>
+                                    <div className="sm:col-span-2 rounded-md border border-dashed bg-muted/30 p-3 text-xs text-muted-foreground">
+                                        Communication is installed — you can
+                                        schedule a reminder for this session.
+                                    </div>
+                                    <div className="flex flex-col gap-1.5">
+                                        <Label htmlFor="reminderChannel">
+                                            Reminder channel
+                                        </Label>
+                                        <select
+                                            id="reminderChannel"
+                                            name="reminderChannel"
+                                            defaultValue=""
+                                            className="h-9 rounded-md border bg-background px-3 text-sm"
+                                        >
+                                            <option value="">(no reminder)</option>
+                                            {reminderChannels.map((c) => (
+                                                <option key={c} value={c}>
+                                                    {c}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="flex flex-col gap-1.5">
+                                        <Label htmlFor="reminderHoursBefore">
+                                            Reminder lead time
+                                        </Label>
+                                        <select
+                                            id="reminderHoursBefore"
+                                            name="reminderHoursBefore"
+                                            defaultValue=""
+                                            className="h-9 rounded-md border bg-background px-3 text-sm"
+                                        >
+                                            <option value="">(no reminder)</option>
+                                            <option value="1">1 hour before</option>
+                                            <option value="2">2 hours before</option>
+                                            <option value="24">24 hours before</option>
+                                            <option value="48">48 hours before</option>
+                                        </select>
+                                    </div>
+                                </>
+                            ) : null}
                             <div className="sm:col-span-2">
                                 <SubmitButton pendingLabel="Scheduling…">
                                     Schedule session
