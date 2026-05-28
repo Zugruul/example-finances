@@ -222,6 +222,7 @@ export default async function RecurringPage(props: {
                                     return (
                                         <tr
                                             key={String(t.templateId)}
+                                            id={`tpl-${t.templateId}`}
                                             className="border-b last:border-b-0"
                                         >
                                             <td className="px-2 py-2">

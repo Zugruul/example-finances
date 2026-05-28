@@ -145,6 +145,7 @@ export default async function BudgetsPage(props: {
                                 return (
                                     <li
                                         key={String(b.budgetId)}
+                                        id={`bud-${b.budgetId}`}
                                         className="rounded-md border p-4"
                                     >
                                         <div className="flex flex-wrap items-center justify-between gap-2">

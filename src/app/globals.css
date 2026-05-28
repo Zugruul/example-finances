@@ -126,5 +126,21 @@
   }
   html {
     @apply font-sans;
+    scroll-behavior: smooth;
   }
+}
+
+/*
+ * Brief highlight when an item is navigated to via #anchor (typically
+ * the View-in-XYZ buttons from the audit log). Three-second sky tint
+ * fade — long enough for the user to spot the item, short enough that
+ * it doesn't linger.
+ */
+@keyframes audit-target-flash {
+  0%   { background-color: rgb(56 189 248 / 0.20); }
+  100% { background-color: transparent; }
+}
+:target {
+  animation: audit-target-flash 3s ease-out;
+  scroll-margin-top: 4rem;
 }

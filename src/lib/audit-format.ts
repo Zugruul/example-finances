@@ -344,6 +344,110 @@ export function formatAuditEvent(
     }
 }
 
+/**
+ * Pull the entity id out of a stream name. Streams follow
+ * `<entity>-<uuid>` for top-level streams and
+ * `tenant-<uuid>-membership-<uuid>` for membership streams (the
+ * membership id is the second uuid).
+ */
+function streamEntityId(stream: string): string | undefined {
+    if (stream.startsWith('tenant-') && stream.includes('-membership-')) {
+        return stream.split('-membership-')[1];
+    }
+    const dash = stream.indexOf('-');
+    return dash >= 0 ? stream.slice(dash + 1) : undefined;
+}
+
+/**
+ * View / ViewIn URL pair for an audit card. `view` is the entity's
+ * own page (null when the entity doesn't have a dedicated detail
+ * route); `viewIn` is the list page, optionally with a hash anchor
+ * for in-list highlight.
+ */
+export interface AuditViewLinks {
+    view: string | null;
+    viewIn: string;
+    viewInLabel: string;
+}
+
+export function auditViewLinks(
+    card: AuditCard,
+    tenantId: string,
+): AuditViewLinks | null {
+    const id = streamEntityId(card.stream);
+    switch (card.domain) {
+        case 'transactions': {
+            if (!id) return null;
+            return {
+                view: `/tenants/${tenantId}/transactions/${id}`,
+                viewIn: `/tenants/${tenantId}/transactions#tx-${id}`,
+                viewInLabel: 'View in transactions',
+            };
+        }
+        case 'accounts': {
+            if (!id) return null;
+            return {
+                view: `/tenants/${tenantId}/accounts/${id}`,
+                viewIn: `/tenants/${tenantId}/accounts#acc-${id}`,
+                viewInLabel: 'View in accounts',
+            };
+        }
+        case 'categories': {
+            // No dedicated category-detail page today — only the list.
+            return {
+                view: null,
+                viewIn: id
+                    ? `/tenants/${tenantId}/categories#cat-${id}`
+                    : `/tenants/${tenantId}/categories`,
+                viewInLabel: 'View in categories',
+            };
+        }
+        case 'budgets': {
+            return {
+                view: null,
+                viewIn: id
+                    ? `/tenants/${tenantId}/budgets#bud-${id}`
+                    : `/tenants/${tenantId}/budgets`,
+                viewInLabel: 'View in budgets',
+            };
+        }
+        case 'recurring-templates': {
+            if (!id) return null;
+            return {
+                view: `/tenants/${tenantId}/recurring/${id}/edit`,
+                viewIn: `/tenants/${tenantId}/recurring#tpl-${id}`,
+                viewInLabel: 'View in recurring',
+            };
+        }
+        case 'tenants': {
+            // Membership stream → members list; tenant stream → tenant page.
+            if (card.stream.includes('-membership-')) {
+                return {
+                    view: null,
+                    viewIn: id
+                        ? `/tenants/${tenantId}/members#mbr-${id}`
+                        : `/tenants/${tenantId}/members`,
+                    viewInLabel: 'View in members',
+                };
+            }
+            return {
+                view: `/tenants/${tenantId}`,
+                viewIn: `/tenants/${tenantId}`,
+                viewInLabel: 'View workspace',
+            };
+        }
+        case 'users': {
+            return {
+                view: '/profile',
+                viewIn: '/profile',
+                viewInLabel: 'View profile',
+            };
+        }
+        default:
+            return null;
+    }
+}
+
 export const AUDIT_DOMAINS: { value: AuditDomain | 'all'; label: string }[] = [
     { value: 'all', label: 'All' },
     { value: 'transactions', label: 'Transactions' },

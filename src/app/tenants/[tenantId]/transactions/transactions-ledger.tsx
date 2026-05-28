@@ -369,6 +369,11 @@ export function TransactionsLedger({
                         return (
                             <tr
                                 key={r.transactionId}
+                                id={
+                                    isOptimisticallyPending
+                                        ? undefined
+                                        : `tx-${r.transactionId}`
+                                }
                                 data-template-id={r.templateId}
                                 className={
                                     'border-b last:border-b-0 transition-colors data-[template-active=true]:bg-amber-100/60 data-[template-active=true]:dark:bg-amber-900/30 ' +

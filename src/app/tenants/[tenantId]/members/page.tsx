@@ -61,6 +61,7 @@ export default async function MembersPage(props: { params: Promise<Params> }) {
                     {memberships.map((m) => (
                         <div
                             key={m.membershipId}
+                            id={`mbr-${m.membershipId}`}
                             className="flex flex-col gap-3 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
                         >
                             <div className="flex flex-col">

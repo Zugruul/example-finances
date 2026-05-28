@@ -184,6 +184,7 @@ export default async function CategoriesPage(props: {
                                 return (
                                     <li
                                         key={String(c.categoryId)}
+                                        id={`cat-${c.categoryId}`}
                                         className="flex flex-wrap items-center gap-3 rounded-md border p-3"
                                         style={{
                                             marginLeft: `${c.depth * 1.25}rem`,

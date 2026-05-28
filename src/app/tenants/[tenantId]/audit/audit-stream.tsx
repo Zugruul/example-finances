@@ -14,6 +14,7 @@ import { EmptyState } from '@/components/empty-state';
 import { ScrollTextIcon } from 'lucide-react';
 import {
     AUDIT_DOMAINS,
+    auditViewLinks,
     formatAuditEvent,
     type AuditCard,
     type AuditCtx,
@@ -321,7 +322,7 @@ export function AuditStream({
                 <ul className="flex flex-col gap-2">
                     {visible.map((c) => (
                         <li key={c.uuid}>
-                            <AuditCardView card={c} />
+                            <AuditCardView card={c} tenantId={tenantId} />
                         </li>
                     ))}
                 </ul>
@@ -341,7 +342,14 @@ export function AuditStream({
     );
 }
 
-function AuditCardView({ card }: { card: AuditCard }) {
+function AuditCardView({
+    card,
+    tenantId,
+}: {
+    card: AuditCard;
+    tenantId: string;
+}) {
+    const links = auditViewLinks(card, tenantId);
     return (
         <Card>
             <CardContent className="flex flex-col gap-1.5 p-3">
@@ -374,6 +382,24 @@ function AuditCardView({ card }: { card: AuditCard }) {
                     {card.actorEmail ? (
                         <span title={card.actorEmail}>
                             by {card.actorEmail}
+                        </span>
+                    ) : null}
+                    {links ? (
+                        <span className="ml-auto flex items-center gap-2">
+                            {links.view ? (
+                                <a
+                                    href={links.view}
+                                    className="text-sky-600 hover:underline dark:text-sky-400"
+                                >
+                                    View
+                                </a>
+                            ) : null}
+                            <a
+                                href={links.viewIn}
+                                className="text-sky-600 hover:underline dark:text-sky-400"
+                            >
+                                {links.viewInLabel}
+                            </a>
                         </span>
                     ) : null}
                 </div>

@@ -154,7 +154,10 @@ export default async function AccountsListPage(props: {
                                     String(a.accountId),
                                 );
                                 return (
-                                    <li key={String(a.accountId)}>
+                                    <li
+                                        key={String(a.accountId)}
+                                        id={`acc-${a.accountId}`}
+                                    >
                                         <Link
                                             href={`/tenants/${tenantId}/accounts/${a.accountId}`}
                                             className="flex items-center justify-between gap-3 rounded-md border p-3 transition hover:bg-muted/40"
