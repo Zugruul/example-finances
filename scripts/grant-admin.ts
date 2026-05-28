@@ -71,13 +71,23 @@ async function main(): Promise<number> {
 
     let userId: string;
     try {
-        const usersCol = client.db('finances_auth').collection('users');
-        const user = await usersCol.findOne<{ _id: unknown; email?: string }>({
-            email,
-        });
+        // Consolidated `finances` DB layout (Wave-B): Auth.js's users
+        // live as `auth_users` inside the single `finances` DB rather
+        // than a separate `finances_auth` database. Look there first,
+        // fall back to the legacy location for older deployments.
+        const financesUsers = client
+            .db('finances')
+            .collection<{ _id: unknown; email?: string }>('auth_users');
+        let user = await financesUsers.findOne({ email });
+        if (!user) {
+            const legacy = client
+                .db('finances_auth')
+                .collection<{ _id: unknown; email?: string }>('users');
+            user = await legacy.findOne({ email });
+        }
         if (!user) {
             console.error(
-                `✗ No user found for ${email} in finances_auth.users.\n` +
+                `✗ No user found for ${email} in finances.auth_users (or legacy finances_auth.users).\n` +
                     '  They must sign in once via OAuth before you can grant admin.\n' +
                     '  Start the dev server (pnpm dev), have them sign in at /auth/signin,\n' +
                     '  then re-run this script.',
