@@ -15,6 +15,7 @@ import type { SorcUUID } from '@event-sorcerer/core';
 import { withToast } from '@/lib/toast-url';
 import { withActorContext } from '@/lib/actor-context';
 import { parseAmountToMinor } from '@/lib/money';
+import { revalidateTenantDashboards } from '@/lib/revalidate-dashboards';
 
 const TX_TYPES: readonly TransactionType[] = ['income', 'expense'];
 
@@ -133,6 +134,7 @@ export const recordTransactionAction = withActorContext(
 
         revalidatePath(`/tenants/${tenantId}/transactions`);
         revalidatePath(`/tenants/${tenantId}/accounts/${accountId}`);
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(
                 `/tenants/${tenantId}/transactions`,
@@ -195,6 +197,7 @@ export const updateTransactionAction = withActorContext(
         revalidatePath(`/tenants/${tenantId}/transactions`);
         revalidatePath(`/tenants/${tenantId}/transactions/${transactionId}`);
         revalidatePath(`/tenants/${tenantId}/accounts/${tx.accountId}`);
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(
                 `/tenants/${tenantId}/transactions/${transactionId}`,
@@ -327,6 +330,7 @@ export const recordTransferAction = withActorContext(
         revalidatePath(
             `/tenants/${tenantId}/accounts/${toAccount.accountId}`,
         );
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(
                 `/tenants/${tenantId}/transactions`,
@@ -359,6 +363,7 @@ export const deleteTransactionAction = withActorContext(
 
         revalidatePath(`/tenants/${tenantId}/transactions`);
         revalidatePath(`/tenants/${tenantId}/accounts/${tx.accountId}`);
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(
                 `/tenants/${tenantId}/transactions`,
@@ -512,6 +517,7 @@ export const revertTransactionsAction = withActorContext(
         for (const accountId of groups.keys()) {
             revalidatePath(`/tenants/${tenantId}/accounts/${accountId}`);
         }
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(
                 `/tenants/${tenantId}/transactions`,

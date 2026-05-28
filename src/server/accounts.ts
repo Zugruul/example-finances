@@ -14,6 +14,7 @@ import type { SorcUUID } from '@event-sorcerer/core';
 import { withToast } from '@/lib/toast-url';
 import { withActorContext } from '@/lib/actor-context';
 import { parseAmountToMinor } from '@/lib/money';
+import { revalidateTenantDashboards } from '@/lib/revalidate-dashboards';
 
 const ACCOUNT_TYPES: readonly AccountType[] = [
     'checking',
@@ -102,6 +103,7 @@ export const createAccountAction = withActorContext(
         );
 
         revalidatePath(`/tenants/${tenantId}/accounts`);
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(
                 `/tenants/${tenantId}/accounts/${accountId}`,
@@ -133,6 +135,7 @@ export const renameAccountAction = withActorContext(
         );
 
         revalidatePath(`/tenants/${tenantId}/accounts/${accountId}`);
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(
                 `/tenants/${tenantId}/accounts/${accountId}`,
@@ -160,6 +163,7 @@ export const archiveAccountAction = withActorContext(
         );
 
         revalidatePath(`/tenants/${tenantId}/accounts`);
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(
                 `/tenants/${tenantId}/accounts`,
@@ -187,6 +191,7 @@ export const closeAccountAction = withActorContext(
         );
 
         revalidatePath(`/tenants/${tenantId}/accounts`);
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(
                 `/tenants/${tenantId}/accounts`,

@@ -13,6 +13,7 @@ import type { MembershipRole } from '@/domains/tenants';
 import type { SorcUUID } from '@event-sorcerer/core';
 import { withToast } from '@/lib/toast-url';
 import { withActorContext } from '@/lib/actor-context';
+import { revalidateTenantDashboards } from '@/lib/revalidate-dashboards';
 
 const CATEGORY_TYPES: readonly CategoryType[] = ['income', 'expense', 'transfer'];
 
@@ -127,6 +128,7 @@ export const createCategoryAction = withActorContext(
         );
 
         revalidatePath(`/tenants/${tenantId}/categories`);
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(
                 `/tenants/${tenantId}/categories`,
@@ -154,6 +156,7 @@ export const renameCategoryAction = withActorContext(
         );
 
         revalidatePath(`/tenants/${tenantId}/categories`);
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(
                 `/tenants/${tenantId}/categories`,
@@ -195,6 +198,7 @@ export const reparentCategoryAction = withActorContext(
         );
 
         revalidatePath(`/tenants/${tenantId}/categories`);
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(
                 `/tenants/${tenantId}/categories`,
@@ -219,6 +223,7 @@ export const archiveCategoryAction = withActorContext(
         );
 
         revalidatePath(`/tenants/${tenantId}/categories`);
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(
                 `/tenants/${tenantId}/categories`,

@@ -47,6 +47,8 @@ export const updateProfileAction = withActorContext(
         );
 
         revalidatePath('/profile');
+        // Sidebar email / name lives in the root layout.
+        revalidatePath('/', 'layout');
         redirect(withToast('/profile', 'success', 'Profile updated'));
     },
 );

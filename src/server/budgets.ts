@@ -14,6 +14,7 @@ import type { SorcUUID } from '@event-sorcerer/core';
 import { withToast } from '@/lib/toast-url';
 import { withActorContext } from '@/lib/actor-context';
 import { parseAmountToMinor } from '@/lib/money';
+import { revalidateTenantDashboards } from '@/lib/revalidate-dashboards';
 
 const ROLLOVER: readonly RolloverPolicy[] = ['none', 'carry-forward', 'reset'];
 
@@ -106,6 +107,7 @@ export const createBudgetAction = withActorContext(
         );
 
         revalidatePath(`/tenants/${tenantId}/budgets`);
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(
                 `/tenants/${tenantId}/budgets`,
@@ -155,6 +157,7 @@ export const updateBudgetAction = withActorContext(
         );
 
         revalidatePath(`/tenants/${tenantId}/budgets`);
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(
                 `/tenants/${tenantId}/budgets`,
@@ -179,6 +182,7 @@ export const archiveBudgetAction = withActorContext(
         );
 
         revalidatePath(`/tenants/${tenantId}/budgets`);
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(
                 `/tenants/${tenantId}/budgets`,

@@ -13,6 +13,7 @@ import type {
 import type { SorcUUID } from '@event-sorcerer/core';
 import { withToast } from '@/lib/toast-url';
 import { withActorContext } from '@/lib/actor-context';
+import { revalidateTenantDashboards } from '@/lib/revalidate-dashboards';
 
 // ----- helpers -----
 
@@ -104,6 +105,9 @@ export const createTenantAction = withActorContext(
         );
 
         revalidatePath('/tenants');
+        // Sidebar tenants list lives in the root layout — refresh it so
+        // the new tenant appears without a manual reload.
+        revalidatePath('/', 'layout');
         redirect(
             withToast(
                 `/tenants/${tenantId}`,
@@ -134,7 +138,11 @@ export const renameTenantAction = withActorContext(
             { store: 'mongostore' as never, stream: tStream },
         );
 
-        revalidatePath(`/tenants/${tenantId}`);
+        // Layout-level: tenant name shows in sidebar + breadcrumbs + per-
+        // tenant dashboard header, all of which live above the route in
+        // the layout tree.
+        revalidatePath('/', 'layout');
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(`/tenants/${tenantId}`, 'success', 'Tenant renamed'),
         );

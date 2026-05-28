@@ -22,6 +22,7 @@ import type { SorcUUID } from '@event-sorcerer/core';
 import { withToast } from '@/lib/toast-url';
 import { withActorContext } from '@/lib/actor-context';
 import { parseAmountToMinor } from '@/lib/money';
+import { revalidateTenantDashboards } from '@/lib/revalidate-dashboards';
 
 const TX_TYPES: readonly TemplateType[] = ['income', 'expense'];
 
@@ -169,6 +170,7 @@ export const createTemplateAction = withActorContext(
         );
 
         revalidatePath(`/tenants/${tenantId}/recurring`);
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(
                 `/tenants/${tenantId}/recurring`,
@@ -275,6 +277,7 @@ export const updateTemplateAction = withActorContext(
 
         revalidatePath(`/tenants/${tenantId}/recurring`);
         revalidatePath(`/tenants/${tenantId}/transactions`);
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(
                 `/tenants/${tenantId}/recurring`,
@@ -297,6 +300,7 @@ export const archiveTemplateAction = withActorContext(
             { store: 'mongostore' as never, stream },
         );
         revalidatePath(`/tenants/${tenantId}/recurring`);
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(
                 `/tenants/${tenantId}/recurring`,
@@ -395,7 +399,7 @@ export const materializeDueTemplatesAction = withActorContext(
 
         revalidatePath(`/tenants/${tenantId}/recurring`);
         revalidatePath(`/tenants/${tenantId}/transactions`);
-        revalidatePath(`/dashboard`);
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(
                 `/tenants/${tenantId}/recurring`,
@@ -564,6 +568,7 @@ export const applyTemplateAction = withActorContext(
         revalidatePath(`/tenants/${tenantId}/transactions`);
         revalidatePath(`/tenants/${tenantId}/recurring`);
         revalidatePath(`/tenants/${tenantId}/accounts/${accountId}`);
+        revalidateTenantDashboards(tenantId);
         redirect(
             withToast(
                 `/tenants/${tenantId}/transactions`,
