@@ -15,6 +15,12 @@ import {
     type QuickPickTemplate,
 } from './quick-pick-templates';
 import { TemplateHoverRoot } from './template-hover-root';
+import {
+    TransactionsOptimisticProvider,
+    OptimisticRecordForm,
+    type AccountLite,
+    type CategoryLite,
+} from './transactions-optimistic';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/submit-button';
 import {
@@ -249,6 +255,23 @@ export default async function TransactionsListPage(props: {
         };
     });
 
+    // Plain-JSON snapshots for the client-side optimistic provider. The
+    // form's optimistic-row builder needs to look up account name +
+    // currency (for proper formatting) and category name without
+    // re-querying the read models from the client.
+    const accountByIdJson: Record<string, AccountLite> = {};
+    for (const a of accounts) {
+        accountByIdJson[String(a.accountId)] = {
+            name: a.name,
+            currency: a.currency,
+            isClosed: a.isClosed,
+        };
+    }
+    const categoryByIdJson: Record<string, CategoryLite> = {};
+    for (const c of categories) {
+        categoryByIdJson[String(c.categoryId)] = { name: c.name };
+    }
+
     function buildHref(overrides: Partial<SearchParams>): string {
         const qs = new URLSearchParams();
         const merged: SearchParams = { ...sp, ...overrides };
@@ -260,6 +283,10 @@ export default async function TransactionsListPage(props: {
     }
 
     return (
+        <TransactionsOptimisticProvider
+            accountById={accountByIdJson}
+            categoryById={categoryByIdJson}
+        >
         <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 p-8">
             <BreadcrumbBar
                 items={[
@@ -411,24 +438,24 @@ export default async function TransactionsListPage(props: {
                     <CardTitle>Ledger ({filtered.length})</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    {pageRows.length === 0 ? (
-                        <EmptyState
-                            icon={<ReceiptIcon />}
-                            title="No transactions yet"
-                            description={
-                                canRecord
-                                    ? 'Use the form below to record one.'
-                                    : 'Ask an owner, admin, or member to record transactions.'
-                            }
-                        />
-                    ) : (
-                        <TransactionsLedger
-                            tenantId={tenantId}
-                            rows={ledgerRows}
-                            canRecord={canRecord}
-                            revertAction={revertAction}
-                        />
-                    )}
+                    {/* Always render the ledger — it owns the empty-state
+                        message internally now so that an optimistic ghost
+                        row pushed from the form is visible even when the
+                        underlying read-model rows are still empty. */}
+                    <TransactionsLedger
+                        tenantId={tenantId}
+                        rows={ledgerRows}
+                        canRecord={canRecord}
+                        revertAction={revertAction}
+                        emptyDescription={
+                            canRecord
+                                ? 'Use the form below to record one.'
+                                : 'Ask an owner, admin, or member to record transactions.'
+                        }
+                    />
+                    {/* Suppress placeholder visually when nothing pending or
+                        persisted; the ledger renders its own empty UI. */}
+                    {false}
                     {totalPages > 1 ? (
                         <div className="mt-4 flex items-center justify-between text-sm">
                             <span className="text-muted-foreground">
@@ -482,12 +509,15 @@ export default async function TransactionsListPage(props: {
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <form
+                        <OptimisticRecordForm
                             // Use the apply-template flow when a templateId
                             // is in the URL (so submission emits both
                             // TransactionRecorded AND TemplateMaterialized
                             // atomically). Otherwise the regular record
-                            // action.
+                            // action. The optimistic ghost row works the
+                            // same in both paths — the only client-visible
+                            // difference is the toast on the server
+                            // redirect.
                             action={formAction}
                             // Keep the form's submitted URL stable so
                             // redirects + revalidations work the same
@@ -675,7 +705,7 @@ export default async function TransactionsListPage(props: {
                                     </Link>
                                 ) : null}
                             </div>
-                        </form>
+                        </OptimisticRecordForm>
                     </CardContent>
                 </Card>
             ) : null}
@@ -777,5 +807,6 @@ export default async function TransactionsListPage(props: {
                 </Card>
             ) : null}
         </main>
+        </TransactionsOptimisticProvider>
     );
 }

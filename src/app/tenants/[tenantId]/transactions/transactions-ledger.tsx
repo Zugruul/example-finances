@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useOptimistic, useState, useTransition } from 'react';
+import { useOptimisticPending } from './transactions-optimistic';
 import Link from 'next/link';
 import { MoreHorizontalIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -37,6 +38,8 @@ interface Props {
     canRecord: boolean;
     /** Server action bound with tenantId; takes FormData with `ids` (csv). */
     revertAction: (formData: FormData) => Promise<void> | void;
+    /** Shown when allRows (rows + optimistic pending) is empty. */
+    emptyDescription?: string;
 }
 
 type ViewMode = 'ledger' | 'transactions';
@@ -181,6 +184,7 @@ export function TransactionsLedger({
     rows,
     canRecord,
     revertAction,
+    emptyDescription,
 }: Props) {
     const [mode, setMode] = useState<ViewMode>('ledger');
     const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -199,20 +203,30 @@ export function TransactionsLedger({
         return next;
     });
 
-    const chains = useMemo(() => buildChainStates(rows), [rows]);
+    // Optimistic ghost rows pushed by the record-transaction form via
+    // `<OptimisticRecordForm>` (sibling under the same provider). React
+    // auto-clears them when the form-action transition resolves and
+    // the new render lands with the real row in `rows`.
+    const pendingRows = useOptimisticPending();
+    const allRows = useMemo<LedgerRow[]>(
+        () => (pendingRows.length === 0 ? rows : [...pendingRows, ...rows]),
+        [pendingRows, rows],
+    );
+
+    const chains = useMemo(() => buildChainStates(allRows), [allRows]);
 
     const visibleRows = useMemo(() => {
         if (mode === 'transactions') {
             // Hide every revert AND every currently-reverted original.
-            return rows.filter((r) => {
+            return allRows.filter((r) => {
                 const cs = chains.get(r.transactionId)!;
                 if (cs.isRevert) return false;
                 if (cs.isCurrentlyReverted) return false;
                 return true;
             });
         }
-        return groupForLedger(rows, chains);
-    }, [rows, chains, mode]);
+        return groupForLedger(allRows, chains);
+    }, [allRows, chains, mode]);
 
     const toggleAll = () => {
         if (selected.size === visibleRows.length) {
@@ -246,6 +260,17 @@ export function TransactionsLedger({
                 console.error('[ledger] revert failed', err);
             }
         });
+    }
+
+    if (allRows.length === 0) {
+        return (
+            <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+                <p className="font-medium text-foreground">
+                    No transactions yet
+                </p>
+                {emptyDescription ? <p className="mt-1">{emptyDescription}</p> : null}
+            </div>
+        );
     }
 
     return (
@@ -335,6 +360,8 @@ export function TransactionsLedger({
                             r.transactionType === 'income' ? '+' : '−';
                         const isOptimisticallyReverting =
                             optimisticReverting.has(r.transactionId);
+                        const isOptimisticallyPending =
+                            r.transactionId.startsWith('optimistic-');
                         const showAsReverted =
                             cs.isCurrentlyReverted ||
                             cs.isRevert ||
@@ -351,21 +378,26 @@ export function TransactionsLedger({
                                     (cs.isRevert ? ' bg-muted/30' : '') +
                                     (isOptimisticallyReverting
                                         ? ' bg-amber-50/60 dark:bg-amber-900/20'
+                                        : '') +
+                                    (isOptimisticallyPending
+                                        ? ' bg-sky-50/60 dark:bg-sky-900/20'
                                         : '')
                                 }
                             >
                                 {canRecord ? (
                                     <td className="px-2 py-2">
-                                        <input
-                                            type="checkbox"
-                                            checked={selected.has(
-                                                r.transactionId,
-                                            )}
-                                            onChange={() =>
-                                                toggleOne(r.transactionId)
-                                            }
-                                            aria-label="Select"
-                                        />
+                                        {isOptimisticallyPending ? null : (
+                                            <input
+                                                type="checkbox"
+                                                checked={selected.has(
+                                                    r.transactionId,
+                                                )}
+                                                onChange={() =>
+                                                    toggleOne(r.transactionId)
+                                                }
+                                                aria-label="Select"
+                                            />
+                                        )}
                                     </td>
                                 ) : null}
                                 <td className="px-2 py-2 font-mono text-xs">
@@ -373,12 +405,26 @@ export function TransactionsLedger({
                                     {r.occurredOn}
                                 </td>
                                 <td className="px-2 py-2">
-                                    <Link
-                                        href={`/tenants/${tenantId}/transactions/${r.transactionId}`}
-                                        className="hover:underline"
-                                    >
-                                        {r.description ?? '—'}
-                                    </Link>
+                                    {isOptimisticallyPending ? (
+                                        <span className="text-muted-foreground">
+                                            {r.description ?? '—'}
+                                        </span>
+                                    ) : (
+                                        <Link
+                                            href={`/tenants/${tenantId}/transactions/${r.transactionId}`}
+                                            className="hover:underline"
+                                        >
+                                            {r.description ?? '—'}
+                                        </Link>
+                                    )}
+                                    {isOptimisticallyPending ? (
+                                        <Badge
+                                            variant="outline"
+                                            className="ml-2 text-[10px] border-sky-500/60 text-sky-700 dark:text-sky-300"
+                                        >
+                                            recording…
+                                        </Badge>
+                                    ) : null}
                                     {cs.isRevert ? (
                                         <Badge
                                             variant="outline"
@@ -421,14 +467,16 @@ export function TransactionsLedger({
                                 </td>
                                 {canRecord ? (
                                     <td className="px-2 py-2">
-                                        <RowMenu
-                                            row={r}
-                                            chainState={cs}
-                                            onRevert={(targetIds) =>
-                                                submitRevert(targetIds)
-                                            }
-                                            disabled={isPending}
-                                        />
+                                        {isOptimisticallyPending ? null : (
+                                            <RowMenu
+                                                row={r}
+                                                chainState={cs}
+                                                onRevert={(targetIds) =>
+                                                    submitRevert(targetIds)
+                                                }
+                                                disabled={isPending}
+                                            />
+                                        )}
                                     </td>
                                 ) : null}
                             </tr>
