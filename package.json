@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "admin:grant": "tsx scripts/grant-admin.ts",
-    "admin:migrate-uuid-strings": "tsx scripts/migrate-uuid-strings.ts"
+    "admin:migrate-uuid-strings": "tsx scripts/migrate-uuid-strings.ts",
+    "admin:install-finances-module": "tsx scripts/install-finances-module.ts"
   },
   "dependencies": {
     "@auth/mongodb-adapter": "^3.11.2",

@@ -1,7 +1,22 @@
-import { redirect } from 'next/navigation';
+import { headers } from 'next/headers';
+import { notFound, redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { readModels } from '@/sorc';
 import { writeLastTenantCookie } from '@/lib/last-tenant-cookie';
+import { FINANCES_MODULE_ID } from '@/modules/finances.manifest';
+
+// Path-prefix → moduleId mapping. When a request targets one of these
+// per-tenant subpaths and the tenant doesn't have the module
+// installed + enabled, the layout 404s. Members + Audit + Options are
+// always-present built-ins that don't appear here.
+const MODULE_PATH_PREFIXES: Array<{ prefix: string; moduleId: string }> = [
+    { prefix: '/dashboard', moduleId: FINANCES_MODULE_ID },
+    { prefix: '/accounts', moduleId: FINANCES_MODULE_ID },
+    { prefix: '/transactions', moduleId: FINANCES_MODULE_ID },
+    { prefix: '/categories', moduleId: FINANCES_MODULE_ID },
+    { prefix: '/budgets', moduleId: FINANCES_MODULE_ID },
+    { prefix: '/recurring', moduleId: FINANCES_MODULE_ID },
+];
 
 export default async function TenantLayout({
     children,
@@ -33,6 +48,32 @@ export default async function TenantLayout({
         const isImpersonating = !!session.user.impersonation;
         if (session.user.isAdmin !== true || isImpersonating) {
             redirect('/tenants');
+        }
+    }
+
+    // Module gate: if the requested path lives under a module prefix
+    // (e.g. /tenants/[id]/transactions/...) and that module isn't
+    // installed on this tenant, 404. Built-in subpaths (members,
+    // audit) always pass.
+    const h = await headers();
+    const requestPath =
+        h.get('x-invoke-path') ??
+        h.get('x-pathname') ??
+        h.get('next-url') ??
+        '';
+    const subPath = requestPath.replace(
+        new RegExp(`^/tenants/${tenantId}`),
+        '',
+    );
+    const match = MODULE_PATH_PREFIXES.find(
+        (m) => subPath === m.prefix || subPath.startsWith(`${m.prefix}/`),
+    );
+    if (match) {
+        const installed = await readModels.tenantModules.findOne({
+            aggregateKey: `${tenantId}|${match.moduleId}`,
+        });
+        if (!installed || installed.status !== 'installed') {
+            notFound();
         }
     }
 

@@ -50,6 +50,23 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
         ? lastTenantId
         : undefined;
 
+    // Per-tenant installed modules. Sidebar uses this to decide which
+    // Finances pages to surface — a tenant without the Finances module
+    // installed (or with it disabled) shouldn't see its links. Phase 1
+    // of the Modules wave (see .claude/handoffs/wave-modules.md): the
+    // migration script auto-installs Finances on every existing
+    // tenant, so the rendered shape stays identical for current
+    // users; new tenants start blank until they install via /modules.
+    const installedByTenant: Record<string, string[]> = {};
+    for (const t of tenants) {
+        const docs = await readModels.tenantModules.find({
+            tenantId: t.tenantId,
+        });
+        installedByTenant[t.tenantId] = docs
+            .filter((d) => d.status === 'installed')
+            .map((d) => d.moduleId);
+    }
+
     return (
         <TooltipProvider>
             <SidebarProvider>
@@ -58,6 +75,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
                     activeTenantId={activeTenantIdFromCookie}
                     isAdmin={isAdmin}
                     email={email}
+                    installedModulesByTenant={installedByTenant}
                 />
                 <SidebarInset>
                     <AppTopBar email={email} />
