@@ -167,16 +167,74 @@ import {
     type TenantModuleStreamPattern,
     type TenantModuleDoc,
 } from '@/domains/tenant-modules';
+// Psychologist module — Client / Session / Note
 import {
-    clientEvents,
-    clientReducer,
-    clientCommands,
-    clientsByTenantApply,
-    clientsByTenantKey,
-    clientsByTenantListen,
-    type ClientStreamPattern,
-    type ClientDoc,
-} from '@/domains/clients';
+    psychologistClientEvents,
+    psychologistClientReducer,
+    psychologistClientCommands,
+    psychologistClientsApply,
+    psychologistClientsKey,
+    psychologistClientsListen,
+    psychologistSessionEvents,
+    psychologistSessionReducer,
+    psychologistSessionCommands,
+    psychologistSessionsApply,
+    psychologistSessionsKey,
+    psychologistSessionsListen,
+    psychologistNoteEvents,
+    psychologistNoteReducer,
+    psychologistNoteCommands,
+    psychologistNotesApply,
+    psychologistNotesKey,
+    psychologistNotesListen,
+    type PsychologistClientStreamPattern,
+    type PsychologistSessionStreamPattern,
+    type PsychologistNoteStreamPattern,
+    type PsychologistClientDoc,
+    type PsychologistSessionDoc,
+    type PsychologistNoteDoc,
+} from '@/domains/psychologist';
+// Communication module — Integration / Reminder
+import {
+    communicationIntegrationEvents,
+    communicationIntegrationReducer,
+    communicationIntegrationCommands,
+    communicationIntegrationsApply,
+    communicationIntegrationsKey,
+    communicationIntegrationsListen,
+    communicationReminderEvents,
+    communicationReminderReducer,
+    communicationReminderCommands,
+    communicationRemindersApply,
+    communicationRemindersKey,
+    communicationRemindersListen,
+    type CommunicationIntegrationStreamPattern,
+    type CommunicationReminderStreamPattern,
+    type CommunicationIntegrationDoc,
+    type CommunicationReminderDoc,
+} from '@/domains/communication';
+// Generic Telehealth (any module can reference a meeting)
+import {
+    telehealthMeetingEvents,
+    telehealthMeetingReducer,
+    telehealthMeetingCommands,
+    telehealthMeetingsApply,
+    telehealthMeetingsKey,
+    telehealthMeetingsListen,
+    type TelehealthMeetingStreamPattern,
+    type TelehealthMeetingDoc,
+} from '@/domains/telehealth';
+// Base Calendar (account-level, not module-bound)
+import {
+    calendarConnectionEvents,
+    calendarConnectionReducer,
+    calendarConnectionCommands,
+    calendarConnectionsApply,
+    calendarConnectionsKey,
+    calendarConnectionsListen,
+    type CalendarConnectionStreamPattern,
+    type CalendarConnectionDoc,
+} from '@/domains/calendar';
 
 // ----- HMR-safe singleton bootstrap -----
 
@@ -240,7 +298,27 @@ function buildSorc(metrics: ReturnType<typeof metricsPrometheus>) {
         .setupEvent([...budgetEvents] as unknown as AnyEventClass[])
         .setupEvent([...templateEvents] as unknown as AnyEventClass[])
         .setupEvent([...tenantModuleEvents] as unknown as AnyEventClass[])
-        .setupEvent([...clientEvents] as unknown as AnyEventClass[]);
+        .setupEvent(
+            [...psychologistClientEvents] as unknown as AnyEventClass[],
+        )
+        .setupEvent(
+            [...psychologistSessionEvents] as unknown as AnyEventClass[],
+        )
+        .setupEvent(
+            [...psychologistNoteEvents] as unknown as AnyEventClass[],
+        )
+        .setupEvent(
+            [...communicationIntegrationEvents] as unknown as AnyEventClass[],
+        )
+        .setupEvent(
+            [...communicationReminderEvents] as unknown as AnyEventClass[],
+        )
+        .setupEvent(
+            [...telehealthMeetingEvents] as unknown as AnyEventClass[],
+        )
+        .setupEvent(
+            [...calendarConnectionEvents] as unknown as AnyEventClass[],
+        );
 
     const aggregates = {
         tenant: sorc.aggregate({
@@ -371,17 +449,106 @@ function buildSorc(metrics: ReturnType<typeof metricsPrometheus>) {
             reducer: templateReducer as never,
             commands: templateCommands as never,
         }),
-        client: sorc.aggregate({
-            name: 'Client',
-            streams: ['client-*' as ClientStreamPattern],
-            events: [
-                { name: 'ClientCreated', version: '*' },
-                { name: 'ClientUpdated', version: '*' },
-                { name: 'ClientArchived', version: '*' },
+        psychologistClient: sorc.aggregate({
+            name: 'PsychologistClient',
+            streams: [
+                'psychologist-client-*' as PsychologistClientStreamPattern,
             ],
-            initial: null as ReturnType<typeof clientReducer>,
-            reducer: clientReducer as never,
-            commands: clientCommands as never,
+            events: [
+                { name: 'PsychologistClientCreated', version: '*' },
+                { name: 'PsychologistClientUpdated', version: '*' },
+                { name: 'PsychologistClientArchived', version: '*' },
+            ],
+            initial: null as ReturnType<typeof psychologistClientReducer>,
+            reducer: psychologistClientReducer as never,
+            commands: psychologistClientCommands as never,
+        }),
+        psychologistSession: sorc.aggregate({
+            name: 'PsychologistSession',
+            streams: [
+                'psychologist-session-*' as PsychologistSessionStreamPattern,
+            ],
+            events: [
+                { name: 'PsychologistSessionScheduled', version: '*' },
+                { name: 'PsychologistSessionRescheduled', version: '*' },
+                { name: 'PsychologistSessionStatusChanged', version: '*' },
+            ],
+            initial: null as ReturnType<typeof psychologistSessionReducer>,
+            reducer: psychologistSessionReducer as never,
+            commands: psychologistSessionCommands as never,
+        }),
+        psychologistNote: sorc.aggregate({
+            name: 'PsychologistNote',
+            streams: ['psychologist-note-*' as PsychologistNoteStreamPattern],
+            events: [
+                { name: 'PsychologistNoteCreated', version: '*' },
+                { name: 'PsychologistNoteUpdated', version: '*' },
+                { name: 'PsychologistNoteLocked', version: '*' },
+            ],
+            initial: null as ReturnType<typeof psychologistNoteReducer>,
+            reducer: psychologistNoteReducer as never,
+            commands: psychologistNoteCommands as never,
+        }),
+        communicationIntegration: sorc.aggregate({
+            name: 'CommunicationIntegration',
+            streams: [
+                'communication-integration-*' as CommunicationIntegrationStreamPattern,
+            ],
+            events: [
+                { name: 'CommunicationIntegrationConnected', version: '*' },
+                { name: 'CommunicationIntegrationUpdated', version: '*' },
+                { name: 'CommunicationIntegrationDisabled', version: '*' },
+                { name: 'CommunicationIntegrationEnabled', version: '*' },
+                { name: 'CommunicationIntegrationRemoved', version: '*' },
+            ],
+            initial: null as ReturnType<
+                typeof communicationIntegrationReducer
+            >,
+            reducer: communicationIntegrationReducer as never,
+            commands: communicationIntegrationCommands as never,
+        }),
+        communicationReminder: sorc.aggregate({
+            name: 'CommunicationReminder',
+            streams: [
+                'communication-reminder-*' as CommunicationReminderStreamPattern,
+            ],
+            events: [
+                { name: 'CommunicationReminderScheduled', version: '*' },
+                { name: 'CommunicationReminderSent', version: '*' },
+                { name: 'CommunicationReminderFailed', version: '*' },
+                { name: 'CommunicationReminderCancelled', version: '*' },
+            ],
+            initial: null as ReturnType<typeof communicationReminderReducer>,
+            reducer: communicationReminderReducer as never,
+            commands: communicationReminderCommands as never,
+        }),
+        telehealthMeeting: sorc.aggregate({
+            name: 'TelehealthMeeting',
+            streams: [
+                'telehealth-meeting-*' as TelehealthMeetingStreamPattern,
+            ],
+            events: [
+                { name: 'TelehealthMeetingScheduled', version: '*' },
+                { name: 'TelehealthMeetingStatusChanged', version: '*' },
+            ],
+            initial: null as ReturnType<typeof telehealthMeetingReducer>,
+            reducer: telehealthMeetingReducer as never,
+            commands: telehealthMeetingCommands as never,
+        }),
+        calendarConnection: sorc.aggregate({
+            name: 'CalendarConnection',
+            streams: [
+                'user-*-calendar-*-*' as CalendarConnectionStreamPattern,
+            ],
+            events: [
+                { name: 'CalendarConnected', version: '*' },
+                { name: 'CalendarTokenRefreshed', version: '*' },
+                { name: 'CalendarSynced', version: '*' },
+                { name: 'CalendarDisconnected', version: '*' },
+            ],
+            initial: null as ReturnType<typeof calendarConnectionReducer>,
+            reducer: calendarConnectionReducer as never,
+            commands: calendarConnectionCommands as never,
         }),
         tenantModule: sorc.aggregate({
             name: 'TenantModule',
@@ -659,21 +826,159 @@ function buildReadModels(
         apply: monthlyAggregateApply as never,
     });
 
-    const clientsByTenant = new SorcReadModel<
-        ClientDoc,
+    const psychologistClients = new SorcReadModel<
+        PsychologistClientDoc,
         any,
         any,
         typeof sorc
     >(sorc, {
-        name: 'clients-by-tenant',
+        name: 'psychologist-clients',
         storeName: 'mongostore',
-        events: clientsByTenantListen as never,
-        store: makeStore<ClientDoc>(client, 'rm_clients_by_tenant', [
-            { key: { clientId: 1 }, options: { unique: true } },
-            { key: { tenantId: 1 } },
-        ]),
-        key: clientsByTenantKey as never,
-        apply: clientsByTenantApply as never,
+        events: psychologistClientsListen as never,
+        store: makeStore<PsychologistClientDoc>(
+            client,
+            'rm_psychologist_clients',
+            [
+                { key: { clientId: 1 }, options: { unique: true } },
+                { key: { tenantId: 1 } },
+            ],
+        ),
+        key: psychologistClientsKey as never,
+        apply: psychologistClientsApply as never,
+    });
+
+    const psychologistSessions = new SorcReadModel<
+        PsychologistSessionDoc,
+        any,
+        any,
+        typeof sorc
+    >(sorc, {
+        name: 'psychologist-sessions',
+        storeName: 'mongostore',
+        events: psychologistSessionsListen as never,
+        store: makeStore<PsychologistSessionDoc>(
+            client,
+            'rm_psychologist_sessions',
+            [
+                { key: { sessionId: 1 }, options: { unique: true } },
+                { key: { tenantId: 1, startsAt: -1 } },
+                { key: { clientId: 1, startsAt: -1 } },
+            ],
+        ),
+        key: psychologistSessionsKey as never,
+        apply: psychologistSessionsApply as never,
+    });
+
+    const psychologistNotes = new SorcReadModel<
+        PsychologistNoteDoc,
+        any,
+        any,
+        typeof sorc
+    >(sorc, {
+        name: 'psychologist-notes',
+        storeName: 'mongostore',
+        events: psychologistNotesListen as never,
+        store: makeStore<PsychologistNoteDoc>(
+            client,
+            'rm_psychologist_notes',
+            [
+                { key: { noteId: 1 }, options: { unique: true } },
+                { key: { tenantId: 1, authoredAt: -1 } },
+                { key: { clientId: 1, authoredAt: -1 } },
+                { key: { sessionId: 1 } },
+            ],
+        ),
+        key: psychologistNotesKey as never,
+        apply: psychologistNotesApply as never,
+    });
+
+    const communicationIntegrations = new SorcReadModel<
+        CommunicationIntegrationDoc,
+        any,
+        any,
+        typeof sorc
+    >(sorc, {
+        name: 'communication-integrations',
+        storeName: 'mongostore',
+        events: communicationIntegrationsListen as never,
+        store: makeStore<CommunicationIntegrationDoc>(
+            client,
+            'rm_communication_integrations',
+            [
+                { key: { integrationId: 1 }, options: { unique: true } },
+                { key: { tenantId: 1 } },
+                { key: { provider: 1 } },
+            ],
+        ),
+        key: communicationIntegrationsKey as never,
+        apply: communicationIntegrationsApply as never,
+    });
+
+    const communicationReminders = new SorcReadModel<
+        CommunicationReminderDoc,
+        any,
+        any,
+        typeof sorc
+    >(sorc, {
+        name: 'communication-reminders',
+        storeName: 'mongostore',
+        events: communicationRemindersListen as never,
+        store: makeStore<CommunicationReminderDoc>(
+            client,
+            'rm_communication_reminders',
+            [
+                { key: { reminderId: 1 }, options: { unique: true } },
+                { key: { tenantId: 1, sendAt: 1 } },
+                { key: { status: 1, sendAt: 1 } },
+                { key: { linkedEntityKind: 1, linkedEntityId: 1 } },
+            ],
+        ),
+        key: communicationRemindersKey as never,
+        apply: communicationRemindersApply as never,
+    });
+
+    const telehealthMeetings = new SorcReadModel<
+        TelehealthMeetingDoc,
+        any,
+        any,
+        typeof sorc
+    >(sorc, {
+        name: 'telehealth-meetings',
+        storeName: 'mongostore',
+        events: telehealthMeetingsListen as never,
+        store: makeStore<TelehealthMeetingDoc>(
+            client,
+            'rm_telehealth_meetings',
+            [
+                { key: { meetingId: 1 }, options: { unique: true } },
+                { key: { tenantId: 1, startsAt: -1 } },
+                { key: { linkedEntityKind: 1, linkedEntityId: 1 } },
+            ],
+        ),
+        key: telehealthMeetingsKey as never,
+        apply: telehealthMeetingsApply as never,
+    });
+
+    const calendarConnections = new SorcReadModel<
+        CalendarConnectionDoc,
+        any,
+        any,
+        typeof sorc
+    >(sorc, {
+        name: 'calendar-connections',
+        storeName: 'mongostore',
+        events: calendarConnectionsListen as never,
+        store: makeStore<CalendarConnectionDoc>(
+            client,
+            'rm_calendar_connections',
+            [
+                { key: { connectionId: 1 }, options: { unique: true } },
+                { key: { userId: 1 } },
+                { key: { provider: 1 } },
+            ],
+        ),
+        key: calendarConnectionsKey as never,
+        apply: calendarConnectionsApply as never,
     });
 
     const tenantModules = new SorcReadModel<
@@ -710,7 +1015,13 @@ function buildReadModels(
         recurringTemplates,
         monthlyAggregate,
         tenantModules,
-        clientsByTenant,
+        psychologistClients,
+        psychologistSessions,
+        psychologistNotes,
+        communicationIntegrations,
+        communicationReminders,
+        telehealthMeetings,
+        calendarConnections,
     };
 }
 
@@ -747,7 +1058,13 @@ if (!cache) {
     void readModels.recurringTemplates.subscribe();
     void readModels.monthlyAggregate.subscribe();
     void readModels.tenantModules.subscribe();
-    void readModels.clientsByTenant.subscribe();
+    void readModels.psychologistClients.subscribe();
+    void readModels.psychologistSessions.subscribe();
+    void readModels.psychologistNotes.subscribe();
+    void readModels.communicationIntegrations.subscribe();
+    void readModels.communicationReminders.subscribe();
+    void readModels.telehealthMeetings.subscribe();
+    void readModels.calendarConnections.subscribe();
 
     cache = { bundle, metrics, readModels };
     if (process.env.NODE_ENV !== 'production') {

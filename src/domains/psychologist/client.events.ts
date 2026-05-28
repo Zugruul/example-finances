@@ -10,25 +10,25 @@ import {
 } from '@event-sorcerer/core';
 
 /**
- * clients domain — Psychologist module.
+ * Psychologist module — Client entity.
  *
  * Every PII field is tagged `['pii']` so the cryptoshredding plugin
  * encrypts it before persist + decrypts on read. The per-tenant
  * crypto key lives in the `events_crypto_keys` collection;
  * forgetting a tenant means dropping that tenant's key, which
- * renders every PII field on disk permanently unreadable (GDPR
- * "right to be forgotten" with no full-table sweep).
+ * renders every persisted PII field on disk permanently unreadable.
  *
- * Non-PII fields (the audit timestamps, the actor user id, the
- * tenantId itself) are NOT tagged so they remain queryable from
- * the read models.
+ * Stream prefix `psychologist-client-` keeps the module's streams
+ * easy to identify in `streamPrefixRange` queries / migrations.
  */
 
-export type ClientStreamInstance = SorcStreamInstance<`client-${string}`>;
-export type ClientStreamPattern = SorcStreamPattern<`client-${string}`>;
+export type PsychologistClientStreamInstance =
+    SorcStreamInstance<`psychologist-client-${string}`>;
+export type PsychologistClientStreamPattern =
+    SorcStreamPattern<`psychologist-client-${string}`>;
 
-@domain('clients')
-export class ClientCreatedPayload extends SorcPayload {
+@domain('psychologist')
+export class PsychologistClientCreatedPayload extends SorcPayload {
     @property({ type: 'uuid', required: true })
     clientId!: SorcUUID;
 
@@ -52,10 +52,10 @@ export class ClientCreatedPayload extends SorcPayload {
     address?: string;
 
     @property({ type: 'string', tags: ['pii'] })
-    dateOfBirth?: string; // YYYY-MM-DD; tagged because exact DOB is PII
+    dateOfBirth?: string;
 
     @property({ type: 'string', tags: ['pii'] })
-    notes?: string; // free-text intake notes
+    intakeNotes?: string;
 
     @foreign('users')
     @property({ type: 'uuid', required: true })
@@ -65,8 +65,8 @@ export class ClientCreatedPayload extends SorcPayload {
     createdAt!: Date;
 }
 
-@domain('clients')
-export class ClientUpdatedPayload extends SorcPayload {
+@domain('psychologist')
+export class PsychologistClientUpdatedPayload extends SorcPayload {
     @property({ type: 'uuid', required: true })
     clientId!: SorcUUID;
 
@@ -93,7 +93,7 @@ export class ClientUpdatedPayload extends SorcPayload {
     dateOfBirth?: string;
 
     @property({ type: 'string', tags: ['pii'] })
-    notes?: string;
+    intakeNotes?: string;
 
     @foreign('users')
     @property({ type: 'uuid', required: true })
@@ -103,8 +103,8 @@ export class ClientUpdatedPayload extends SorcPayload {
     updatedAt!: Date;
 }
 
-@domain('clients')
-export class ClientArchivedPayload extends SorcPayload {
+@domain('psychologist')
+export class PsychologistClientArchivedPayload extends SorcPayload {
     @property({ type: 'uuid', required: true })
     clientId!: SorcUUID;
 
@@ -120,53 +120,50 @@ export class ClientArchivedPayload extends SorcPayload {
     archivedAt!: Date;
 }
 
-@domain('clients')
-export class ClientCreatedEvent extends SorcBaseEvent {
-    readonly name = 'ClientCreated' as const;
+@domain('psychologist')
+export class PsychologistClientCreatedEvent extends SorcBaseEvent {
+    readonly name = 'PsychologistClientCreated' as const;
     readonly version = '2026-05-28' as const;
     publishedAt: Date | null = null;
     revision: bigint | null = null;
-
     constructor(
-        public stream: ClientStreamInstance,
-        public payload: ClientCreatedPayload,
+        public stream: PsychologistClientStreamInstance,
+        public payload: PsychologistClientCreatedPayload,
     ) {
         super();
     }
 }
 
-@domain('clients')
-export class ClientUpdatedEvent extends SorcBaseEvent {
-    readonly name = 'ClientUpdated' as const;
+@domain('psychologist')
+export class PsychologistClientUpdatedEvent extends SorcBaseEvent {
+    readonly name = 'PsychologistClientUpdated' as const;
     readonly version = '2026-05-28' as const;
     publishedAt: Date | null = null;
     revision: bigint | null = null;
-
     constructor(
-        public stream: ClientStreamInstance,
-        public payload: ClientUpdatedPayload,
+        public stream: PsychologistClientStreamInstance,
+        public payload: PsychologistClientUpdatedPayload,
     ) {
         super();
     }
 }
 
-@domain('clients')
-export class ClientArchivedEvent extends SorcBaseEvent {
-    readonly name = 'ClientArchived' as const;
+@domain('psychologist')
+export class PsychologistClientArchivedEvent extends SorcBaseEvent {
+    readonly name = 'PsychologistClientArchived' as const;
     readonly version = '2026-05-28' as const;
     publishedAt: Date | null = null;
     revision: bigint | null = null;
-
     constructor(
-        public stream: ClientStreamInstance,
-        public payload: ClientArchivedPayload,
+        public stream: PsychologistClientStreamInstance,
+        public payload: PsychologistClientArchivedPayload,
     ) {
         super();
     }
 }
 
-export const clientEvents = [
-    ClientCreatedEvent,
-    ClientUpdatedEvent,
-    ClientArchivedEvent,
+export const psychologistClientEvents = [
+    PsychologistClientCreatedEvent,
+    PsychologistClientUpdatedEvent,
+    PsychologistClientArchivedEvent,
 ] as const;

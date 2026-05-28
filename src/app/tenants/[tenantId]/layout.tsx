@@ -6,6 +6,7 @@ import { writeLastTenantCookie } from '@/lib/last-tenant-cookie';
 import {
     FINANCES_MODULE_ID,
     PSYCHOLOGIST_MODULE_ID,
+    COMMUNICATION_MODULE_ID,
 } from '@/modules/registry';
 
 // Path-prefix → moduleId mapping. When a request targets one of these
@@ -19,7 +20,8 @@ const MODULE_PATH_PREFIXES: Array<{ prefix: string; moduleId: string }> = [
     { prefix: '/categories', moduleId: FINANCES_MODULE_ID },
     { prefix: '/budgets', moduleId: FINANCES_MODULE_ID },
     { prefix: '/recurring', moduleId: FINANCES_MODULE_ID },
-    { prefix: '/clients', moduleId: PSYCHOLOGIST_MODULE_ID },
+    { prefix: '/psychologist', moduleId: PSYCHOLOGIST_MODULE_ID },
+    { prefix: '/communication', moduleId: COMMUNICATION_MODULE_ID },
 ];
 
 export default async function TenantLayout({

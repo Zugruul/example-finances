@@ -1,25 +1,22 @@
-import { HeartPulseIcon, UsersIcon } from 'lucide-react';
+import {
+    CalendarIcon,
+    HeartPulseIcon,
+    NotebookPenIcon,
+    UsersIcon,
+} from 'lucide-react';
 import type { ModuleManifest } from './types';
 
 export const PSYCHOLOGIST_MODULE_ID = 'psychologist';
 
 /**
- * Psychologist module (Phase 1).
+ * Psychologist module — clinical practice management.
  *
- * Surface delivered in this cut: Clients (the EHR's identity layer).
- * Every PII field on the client aggregate (name, email, phone,
- * address, DOB, intake notes) is tagged for the cryptoshredding
- * plugin so dropping a tenant's per-tenant key renders every
- * persisted client event unreadable — GDPR / HIPAA "right to be
- * forgotten" without a full-table sweep.
- *
- * Future pages this manifest reserves but doesn't yet implement
- * (kept off the `pages` array until they land in code):
- *   - Sessions: per-appointment aggregate
- *   - Notes (EHR): clinical-notes domain, fully encrypted note body
- *   - Calendar: external-OAuth integration (Google / iCal)
- *   - Reminders: messaging-plugin-driven SMS/email
- *   - Telehealth: WebRTC pair-aggregate per session
+ * Every PII field on the clinical entities (client, session,
+ * note) is cryptoshredded. Telehealth meetings link out to the
+ * generic `telehealth` domain so future modules can reuse the
+ * same meeting concept. Reminders for sessions flow through the
+ * Communication module when that module is installed on the same
+ * tenant.
  */
 export const psychologistModule: ModuleManifest = {
     id: PSYCHOLOGIST_MODULE_ID,
@@ -33,11 +30,25 @@ export const psychologistModule: ModuleManifest = {
         {
             id: 'clients',
             label: 'Clients',
-            href: '/clients',
+            href: '/psychologist/clients',
             icon: UsersIcon,
             order: 1,
         },
+        {
+            id: 'sessions',
+            label: 'Sessions',
+            href: '/psychologist/sessions',
+            icon: CalendarIcon,
+            order: 2,
+        },
+        {
+            id: 'notes',
+            label: 'Notes',
+            href: '/psychologist/notes',
+            icon: NotebookPenIcon,
+            order: 3,
+        },
     ],
     uninstallPolicy: 'archive',
-    ownedDomains: ['clients'],
+    ownedDomains: ['psychologist'],
 };

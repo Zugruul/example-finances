@@ -3,6 +3,10 @@ import {
     psychologistModule,
     PSYCHOLOGIST_MODULE_ID,
 } from './psychologist.manifest';
+import {
+    communicationModule,
+    COMMUNICATION_MODULE_ID,
+} from './communication.manifest';
 import type { ModuleManifest } from './types';
 
 /**
@@ -16,6 +20,7 @@ import type { ModuleManifest } from './types';
 export const MODULES: Record<string, ModuleManifest> = {
     [FINANCES_MODULE_ID]: financesModule,
     [PSYCHOLOGIST_MODULE_ID]: psychologistModule,
+    [COMMUNICATION_MODULE_ID]: communicationModule,
 };
 
 export function getModule(id: string): ModuleManifest | undefined {
@@ -28,4 +33,5 @@ export function listModules(): ModuleManifest[] {
 
 export { FINANCES_MODULE_ID } from './finances.manifest';
 export { PSYCHOLOGIST_MODULE_ID } from './psychologist.manifest';
+export { COMMUNICATION_MODULE_ID } from './communication.manifest';
 export type { ModuleManifest, ModulePage } from './types';

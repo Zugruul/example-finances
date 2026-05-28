@@ -14,14 +14,16 @@ import { SubmitButton } from '@/components/submit-button';
 import { EmptyState } from '@/components/empty-state';
 import { BreadcrumbBar } from '@/components/breadcrumb-bar';
 import { UsersIcon, LockIcon } from 'lucide-react';
-import { createClientAction, archiveClientAction } from '@/server/clients';
-import { Button } from '@/components/ui/button';
+import {
+    createPsychologistClientAction,
+    archivePsychologistClientAction,
+} from '@/server/psychologist';
 
 type Params = { tenantId: string };
 
 export const dynamic = 'force-dynamic';
 
-export default async function ClientsPage(props: {
+export default async function PsychologistClientsPage(props: {
     params: Promise<Params>;
 }) {
     const { tenantId } = await props.params;
@@ -31,9 +33,6 @@ export default async function ClientsPage(props: {
     const [tenant] = await readModels.tenants.find({ tenantId });
     if (!tenant) notFound();
 
-    // Tenant-scoped — the route guard in tenants/[tenantId]/layout.tsx
-    // already enforces membership AND module install state, so reads
-    // below are safe.
     const memberships = userId
         ? (await readModels.memberships.find({ tenantId, userId })).filter(
               (m) => !m.removedAt,
@@ -44,10 +43,10 @@ export default async function ClientsPage(props: {
     );
 
     const clients = (
-        await readModels.clientsByTenant.find({ tenantId })
+        await readModels.psychologistClients.find({ tenantId })
     ).filter((c) => !c.isArchived);
 
-    const create = createClientAction.bind(null, tenantId);
+    const create = createPsychologistClientAction.bind(null, tenantId);
 
     return (
         <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-6 p-8">
@@ -58,6 +57,7 @@ export default async function ClientsPage(props: {
                         label: tenant.displayName,
                         href: `/tenants/${tenantId}`,
                     },
+                    { label: 'Psychologist' },
                     { label: 'Clients' },
                 ]}
             />
@@ -106,12 +106,8 @@ export default async function ClientsPage(props: {
                                             {c.firstName} {c.lastName}
                                         </span>
                                         <span className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                                            {c.email ? (
-                                                <span>{c.email}</span>
-                                            ) : null}
-                                            {c.phone ? (
-                                                <span>{c.phone}</span>
-                                            ) : null}
+                                            {c.email ? <span>{c.email}</span> : null}
+                                            {c.phone ? <span>{c.phone}</span> : null}
                                             {c.dateOfBirth ? (
                                                 <Badge
                                                     variant="outline"
@@ -124,7 +120,7 @@ export default async function ClientsPage(props: {
                                     </div>
                                     {canManage ? (
                                         <form
-                                            action={archiveClientAction.bind(
+                                            action={archivePsychologistClientAction.bind(
                                                 null,
                                                 tenantId,
                                                 String(c.clientId),
@@ -152,78 +148,42 @@ export default async function ClientsPage(props: {
                         <CardTitle>Add a client</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <form
-                            action={create}
-                            className="grid gap-3 sm:grid-cols-2"
-                        >
+                        <form action={create} className="grid gap-3 sm:grid-cols-2">
                             <div className="flex flex-col gap-1.5">
                                 <Label htmlFor="firstName">First name</Label>
-                                <Input
-                                    id="firstName"
-                                    name="firstName"
-                                    required
-                                    maxLength={120}
-                                />
+                                <Input id="firstName" name="firstName" required maxLength={120} />
                             </div>
                             <div className="flex flex-col gap-1.5">
                                 <Label htmlFor="lastName">Last name</Label>
-                                <Input
-                                    id="lastName"
-                                    name="lastName"
-                                    required
-                                    maxLength={120}
-                                />
+                                <Input id="lastName" name="lastName" required maxLength={120} />
                             </div>
                             <div className="flex flex-col gap-1.5">
                                 <Label htmlFor="email">Email</Label>
-                                <Input
-                                    id="email"
-                                    name="email"
-                                    type="email"
-                                    placeholder="client@example.com"
-                                />
+                                <Input id="email" name="email" type="email" />
                             </div>
                             <div className="flex flex-col gap-1.5">
                                 <Label htmlFor="phone">Phone</Label>
-                                <Input
-                                    id="phone"
-                                    name="phone"
-                                    type="tel"
-                                    placeholder="+1 (555) 000-0000"
-                                />
+                                <Input id="phone" name="phone" type="tel" />
                             </div>
                             <div className="flex flex-col gap-1.5 sm:col-span-2">
                                 <Label htmlFor="address">Address</Label>
-                                <Input
-                                    id="address"
-                                    name="address"
-                                    placeholder="123 Main St, City, State ZIP"
-                                />
+                                <Input id="address" name="address" />
                             </div>
                             <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="dateOfBirth">
-                                    Date of birth
-                                </Label>
-                                <Input
-                                    id="dateOfBirth"
-                                    name="dateOfBirth"
-                                    type="date"
-                                />
+                                <Label htmlFor="dateOfBirth">Date of birth</Label>
+                                <Input id="dateOfBirth" name="dateOfBirth" type="date" />
                             </div>
                             <div className="flex flex-col gap-1.5 sm:col-span-2">
-                                <Label htmlFor="notes">Intake notes</Label>
+                                <Label htmlFor="intakeNotes">Intake notes</Label>
                                 <textarea
-                                    id="notes"
-                                    name="notes"
+                                    id="intakeNotes"
+                                    name="intakeNotes"
                                     rows={3}
                                     className="rounded-md border bg-background px-3 py-2 text-sm"
-                                    placeholder="Anything to remember…"
                                 />
                             </div>
                             <div className="sm:col-span-2">
-                                <SubmitButton pendingLabel="Adding…">
-                                    Add client
-                                </SubmitButton>
+                                <SubmitButton pendingLabel="Adding…">Add client</SubmitButton>
                             </div>
                         </form>
                     </CardContent>

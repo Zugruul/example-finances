@@ -48,18 +48,29 @@ export default async function SettingsPage() {
                 <p className="text-sm text-muted-foreground">
                     Personal preferences applied across your tenants.
                 </p>
-                <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-3"
-                    nativeButton={false}
-                    render={
-                        <Link href="/settings/audit">
-                            <ScrollTextIcon className="size-4" />
-                            View settings audit
-                        </Link>
-                    }
-                />
+                <div className="mt-3 flex flex-wrap gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        nativeButton={false}
+                        render={
+                            <Link href="/settings/audit">
+                                <ScrollTextIcon className="size-4" />
+                                View settings audit
+                            </Link>
+                        }
+                    />
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        nativeButton={false}
+                        render={
+                            <Link href="/settings/calendars">
+                                Connected calendars
+                            </Link>
+                        }
+                    />
+                </div>
             </div>
 
             <Card>

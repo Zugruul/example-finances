@@ -1,12 +1,12 @@
 import type { CommandContext, SorcUUID } from '@event-sorcerer/core';
 import {
-    ClientCreatedEvent,
-    ClientUpdatedEvent,
-    ClientArchivedEvent,
-    type ClientStreamInstance,
+    PsychologistClientCreatedEvent,
+    PsychologistClientUpdatedEvent,
+    PsychologistClientArchivedEvent,
+    type PsychologistClientStreamInstance,
 } from './client.events';
 
-export type ClientState = null | {
+export type PsychologistClientState = null | {
     clientId: SorcUUID;
     tenantId: SorcUUID;
     firstName: string;
@@ -15,79 +15,70 @@ export type ClientState = null | {
     phone?: string;
     address?: string;
     dateOfBirth?: string;
-    notes?: string;
+    intakeNotes?: string;
     createdByUserId: SorcUUID;
     createdAt: Date;
     isArchived: boolean;
 };
 
-export type ClientEvent = InstanceType<
-    | typeof ClientCreatedEvent
-    | typeof ClientUpdatedEvent
-    | typeof ClientArchivedEvent
+export type PsychologistClientEvent = InstanceType<
+    | typeof PsychologistClientCreatedEvent
+    | typeof PsychologistClientUpdatedEvent
+    | typeof PsychologistClientArchivedEvent
 >;
 
-export function clientReducer(
-    state: ClientState,
-    event: ClientEvent,
-): ClientState {
+export function psychologistClientReducer(
+    state: PsychologistClientState,
+    event: PsychologistClientEvent,
+): PsychologistClientState {
     switch (event.name) {
-        case 'ClientCreated':
+        case 'PsychologistClientCreated': {
+            const p = event.payload;
             return {
-                clientId: event.payload.clientId,
-                tenantId: event.payload.tenantId,
-                firstName: event.payload.firstName,
-                lastName: event.payload.lastName,
-                email: event.payload.email,
-                phone: event.payload.phone,
-                address: event.payload.address,
-                dateOfBirth: event.payload.dateOfBirth,
-                notes: event.payload.notes,
-                createdByUserId: event.payload.createdByUserId,
-                createdAt: event.payload.createdAt,
+                clientId: p.clientId,
+                tenantId: p.tenantId,
+                firstName: p.firstName,
+                lastName: p.lastName,
+                email: p.email,
+                phone: p.phone,
+                address: p.address,
+                dateOfBirth: p.dateOfBirth,
+                intakeNotes: p.intakeNotes,
+                createdByUserId: p.createdByUserId,
+                createdAt: p.createdAt,
                 isArchived: false,
             };
-        case 'ClientUpdated':
+        }
+        case 'PsychologistClientUpdated': {
             if (!state) return state;
+            const p = event.payload;
             return {
                 ...state,
                 firstName:
-                    event.payload.firstName !== undefined
-                        ? event.payload.firstName
-                        : state.firstName,
+                    p.firstName !== undefined ? p.firstName : state.firstName,
                 lastName:
-                    event.payload.lastName !== undefined
-                        ? event.payload.lastName
-                        : state.lastName,
-                email:
-                    event.payload.email !== undefined
-                        ? event.payload.email
-                        : state.email,
-                phone:
-                    event.payload.phone !== undefined
-                        ? event.payload.phone
-                        : state.phone,
-                address:
-                    event.payload.address !== undefined
-                        ? event.payload.address
-                        : state.address,
+                    p.lastName !== undefined ? p.lastName : state.lastName,
+                email: p.email !== undefined ? p.email : state.email,
+                phone: p.phone !== undefined ? p.phone : state.phone,
+                address: p.address !== undefined ? p.address : state.address,
                 dateOfBirth:
-                    event.payload.dateOfBirth !== undefined
-                        ? event.payload.dateOfBirth
+                    p.dateOfBirth !== undefined
+                        ? p.dateOfBirth
                         : state.dateOfBirth,
-                notes:
-                    event.payload.notes !== undefined
-                        ? event.payload.notes
-                        : state.notes,
+                intakeNotes:
+                    p.intakeNotes !== undefined
+                        ? p.intakeNotes
+                        : state.intakeNotes,
             };
-        case 'ClientArchived':
+        }
+        case 'PsychologistClientArchived':
             return state ? { ...state, isArchived: true } : state;
         default:
             return state;
     }
 }
 
-export type CreateClientCmd = {
+export type CreatePsychologistClientCmd = {
     clientId: SorcUUID;
     tenantId: SorcUUID;
     firstName: string;
@@ -96,12 +87,12 @@ export type CreateClientCmd = {
     phone?: string;
     address?: string;
     dateOfBirth?: string;
-    notes?: string;
+    intakeNotes?: string;
     createdByUserId: SorcUUID;
-    stream: ClientStreamInstance;
+    stream: PsychologistClientStreamInstance;
 };
 
-export type UpdateClientCmd = {
+export type UpdatePsychologistClientCmd = {
     tenantId: SorcUUID;
     firstName?: string;
     lastName?: string;
@@ -109,21 +100,21 @@ export type UpdateClientCmd = {
     phone?: string;
     address?: string;
     dateOfBirth?: string;
-    notes?: string;
+    intakeNotes?: string;
     updatedByUserId: SorcUUID;
-    stream: ClientStreamInstance;
+    stream: PsychologistClientStreamInstance;
 };
 
-export type ArchiveClientCmd = {
+export type ArchivePsychologistClientCmd = {
     tenantId: SorcUUID;
     archivedByUserId: SorcUUID;
-    stream: ClientStreamInstance;
+    stream: PsychologistClientStreamInstance;
 };
 
-export const clientCommands = {
-    createClient(
-        state: ClientState,
-        cmd: CreateClientCmd,
+export const psychologistClientCommands = {
+    createPsychologistClient(
+        state: PsychologistClientState,
+        cmd: CreatePsychologistClientCmd,
         ctx?: CommandContext,
     ): void {
         if (state) throw new Error(`Client ${cmd.clientId} already exists`);
@@ -131,7 +122,7 @@ export const clientCommands = {
             throw new Error('First and last name required.');
         }
         ctx!.emit(
-            ClientCreatedEvent,
+            PsychologistClientCreatedEvent,
             {
                 clientId: cmd.clientId,
                 tenantId: cmd.tenantId,
@@ -141,22 +132,24 @@ export const clientCommands = {
                 phone: cmd.phone,
                 address: cmd.address,
                 dateOfBirth: cmd.dateOfBirth,
-                notes: cmd.notes,
+                intakeNotes: cmd.intakeNotes,
                 createdByUserId: cmd.createdByUserId,
                 createdAt: new Date(),
-            } as InstanceType<typeof ClientCreatedEvent>['payload'],
+            } as InstanceType<
+                typeof PsychologistClientCreatedEvent
+            >['payload'],
             { stream: cmd.stream },
         );
     },
-    updateClient(
-        state: ClientState,
-        cmd: UpdateClientCmd,
+    updatePsychologistClient(
+        state: PsychologistClientState,
+        cmd: UpdatePsychologistClientCmd,
         ctx?: CommandContext,
     ): void {
         if (!state) throw new Error('Client does not exist');
         if (state.isArchived) throw new Error('Client is archived');
         ctx!.emit(
-            ClientUpdatedEvent,
+            PsychologistClientUpdatedEvent,
             {
                 clientId: state.clientId,
                 tenantId: state.tenantId,
@@ -166,28 +159,32 @@ export const clientCommands = {
                 phone: cmd.phone,
                 address: cmd.address,
                 dateOfBirth: cmd.dateOfBirth,
-                notes: cmd.notes,
+                intakeNotes: cmd.intakeNotes,
                 updatedByUserId: cmd.updatedByUserId,
                 updatedAt: new Date(),
-            } as InstanceType<typeof ClientUpdatedEvent>['payload'],
+            } as InstanceType<
+                typeof PsychologistClientUpdatedEvent
+            >['payload'],
             { stream: cmd.stream },
         );
     },
-    archiveClient(
-        state: ClientState,
-        cmd: ArchiveClientCmd,
+    archivePsychologistClient(
+        state: PsychologistClientState,
+        cmd: ArchivePsychologistClientCmd,
         ctx?: CommandContext,
     ): void {
         if (!state) throw new Error('Client does not exist');
         if (state.isArchived) throw new Error('Client already archived');
         ctx!.emit(
-            ClientArchivedEvent,
+            PsychologistClientArchivedEvent,
             {
                 clientId: state.clientId,
                 tenantId: state.tenantId,
                 archivedByUserId: cmd.archivedByUserId,
                 archivedAt: new Date(),
-            } as InstanceType<typeof ClientArchivedEvent>['payload'],
+            } as InstanceType<
+                typeof PsychologistClientArchivedEvent
+            >['payload'],
             { stream: cmd.stream },
         );
     },
