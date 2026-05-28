@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
     Area,
     AreaChart,
@@ -340,6 +340,7 @@ export function Sparkline({
 export function SpendingHeatmap({
     days,
     currency,
+    tenantId,
 }: {
     days: Array<{
         ymd: string;
@@ -347,9 +348,16 @@ export function SpendingHeatmap({
         byCategory?: Array<{ name: string; amount: number }>;
     }>;
     currency: string;
+    /** When provided, the pinned-tooltip shows a "View in
+     *  transactions" link scoped to this tenant + day. */
+    tenantId?: string;
 }) {
     return (
-        <SpendingHeatmapImpl days={days} currency={currency} />
+        <SpendingHeatmapImpl
+            days={days}
+            currency={currency}
+            tenantId={tenantId}
+        />
     );
 }
 
@@ -364,6 +372,7 @@ interface HeatmapCell {
 function SpendingHeatmapImpl({
     days,
     currency,
+    tenantId,
 }: {
     days: Array<{
         ymd: string;
@@ -371,6 +380,7 @@ function SpendingHeatmapImpl({
         byCategory?: Array<{ name: string; amount: number }>;
     }>;
     currency: string;
+    tenantId?: string;
 }) {
     // Hook order must be stable. Compute everything regardless of
     // whether `days` is empty; render the placeholder at the bottom.
@@ -380,6 +390,27 @@ function SpendingHeatmapImpl({
         x: number;
         y: number;
     } | null>(null);
+    // Pinned selection (one ymd OR a range). Click = single-day pin;
+    // mousedown + drag = range. Persists until cleared.
+    const [pinned, setPinned] = useState<{
+        startYmd: string;
+        endYmd: string;
+        // Anchor point for the floating tooltip when the selection is
+        // pinned — based on the last cell entered during the drag.
+        x: number;
+        y: number;
+    } | null>(null);
+    const [dragging, setDragging] = useState(false);
+    const dragAnchorRef = useRef<string | null>(null);
+
+    // Release drag on global mouseup so dragging off the SVG still
+    // commits the selection.
+    useEffect(() => {
+        if (!dragging) return;
+        const onUp = () => setDragging(false);
+        window.addEventListener('mouseup', onUp);
+        return () => window.removeEventListener('mouseup', onUp);
+    }, [dragging]);
 
     const max = Math.max(...days.map((d) => d.expense), 1);
     const first = days.length > 0 ? parseYmd(days[0]!.ymd) : new Date();
@@ -398,14 +429,49 @@ function SpendingHeatmapImpl({
     }
     const cols =
         cells.length > 0 ? Math.max(...cells.map((c) => c.col)) + 1 : 0;
-    // GitHub-style square cells; SVG scales to fit width while
-    // preserving the viewBox aspect (12 cols × 7 rows ≈ 1.7:1). Cap
-    // the rendered width so on very wide cards the cells don't grow
-    // into mosaic tiles — the chart is more readable as a tight grid.
+
+    // GitHub-style layout. Left gutter for weekday labels (Mon / Wed /
+    // Fri), top gutter for month labels. Cells stay square inside the
+    // viewBox; preserveAspectRatio="xMidYMid meet" + maxHeight clamps
+    // visual size to a tight horizontal strip.
     const cellSize = 14;
-    const gap = 2;
-    const width = cols * (cellSize + gap);
-    const height = 7 * (cellSize + gap);
+    const gap = 3;
+    const pitch = cellSize + gap;
+    const leftGutter = 28; // weekday labels
+    const topGutter = 16; // month labels
+    const gridX = leftGutter;
+    const gridY = topGutter;
+    const width = gridX + cols * pitch;
+    const height = gridY + 7 * pitch;
+
+    // Month labels: scan cells for the first day of each month and
+    // record (label, col). The label goes above the column that
+    // CONTAINS the 1st — matches GitHub's convention.
+    const monthLabels: Array<{ col: number; text: string }> = [];
+    {
+        const seen = new Set<string>();
+        for (const c of cells) {
+            const d = parseYmd(c.ymd);
+            if (d.getUTCDate() !== 1) continue;
+            const key = `${d.getUTCFullYear()}-${d.getUTCMonth()}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            monthLabels.push({
+                col: c.col,
+                text: d.toLocaleString(undefined, {
+                    month: 'short',
+                    timeZone: 'UTC',
+                }),
+            });
+        }
+    }
+
+    // Day-of-week labels: rows 1 (Mon), 3 (Wed), 5 (Fri).
+    const weekdayLabels: Array<{ row: number; text: string }> = [
+        { row: 1, text: 'Mon' },
+        { row: 3, text: 'Wed' },
+        { row: 5, text: 'Fri' },
+    ];
 
     if (days.length === 0) {
         return (
@@ -422,27 +488,46 @@ function SpendingHeatmapImpl({
                 preserveAspectRatio="xMidYMid meet"
                 role="img"
                 aria-label="Daily spending heatmap"
-                // Scale up nicely on wider cards (~3x natural size at
-                // 600px container width) but never grow taller than the
-                // GitHub-style proportions allow. Width hits 100% only
-                // when the container is narrower than the natural
-                // viewBox; otherwise we let the height-cap drive the
-                // visible size.
                 className="block w-full"
                 style={{
                     maxWidth: '100%',
-                    maxHeight: '160px',
+                    maxHeight: '180px',
                     height: 'auto',
                 }}
                 onMouseLeave={() => setHover(null)}
             >
+                {/* Month labels along the top */}
+                {monthLabels.map((m, idx) => (
+                    <text
+                        key={`m-${idx}`}
+                        x={gridX + m.col * pitch}
+                        y={topGutter - 5}
+                        className="fill-muted-foreground"
+                        style={{ fontSize: 10, fontFamily: 'inherit' }}
+                    >
+                        {m.text}
+                    </text>
+                ))}
+                {/* Weekday labels along the left */}
+                {weekdayLabels.map((w) => (
+                    <text
+                        key={`w-${w.row}`}
+                        x={leftGutter - 4}
+                        y={gridY + w.row * pitch + cellSize - 3}
+                        textAnchor="end"
+                        className="fill-muted-foreground"
+                        style={{ fontSize: 10, fontFamily: 'inherit' }}
+                    >
+                        {w.text}
+                    </text>
+                ))}
                 {cells.map((c) => {
                     const ratio = c.expense / max;
                     return (
                         <rect
                             key={c.ymd}
-                            x={c.col * (cellSize + gap)}
-                            y={c.row * (cellSize + gap)}
+                            x={gridX + c.col * pitch}
+                            y={gridY + c.row * pitch}
                             width={cellSize}
                             height={cellSize}
                             rx={2}
@@ -475,46 +560,70 @@ function SpendingHeatmapImpl({
                 })}
             </svg>
             {hover ? (
-                <div
-                    role="tooltip"
-                    className="pointer-events-none absolute z-10 min-w-[180px] rounded-md border bg-popover p-2 text-xs shadow-md"
-                    style={{
-                        left: Math.min(
-                            hover.x + 12,
-                            (containerRef.current?.offsetWidth ?? 0) - 200,
-                        ),
-                        top: hover.y + 12,
-                    }}
-                >
-                    <p className="font-medium">
-                        {formatDateLabel(hover.cell.ymd)}
-                    </p>
-                    <p className="text-muted-foreground">
-                        Total:{' '}
-                        <span className="font-mono tabular-nums">
-                            {formatMoney(hover.cell.expense, currency)}
-                        </span>
-                    </p>
-                    {hover.cell.byCategory.length > 0 ? (
-                        <ul className="mt-1 flex flex-col gap-0.5 border-t pt-1">
-                            {hover.cell.byCategory.map((c) => (
-                                <li
-                                    key={c.name}
-                                    className="flex items-center justify-between gap-3"
-                                >
-                                    <span>{c.name}</span>
-                                    <span className="font-mono tabular-nums text-muted-foreground">
-                                        {formatMoney(c.amount, currency)}
-                                    </span>
-                                </li>
-                            ))}
-                        </ul>
-                    ) : hover.cell.expense === 0 ? (
-                        <p className="mt-1 text-muted-foreground">
-                            No spending.
-                        </p>
-                    ) : null}
-                </div>
+                (() => {
+                    // Flip the tooltip horizontally / vertically when
+                    // it would otherwise spill out of the container.
+                    // Tooltip approx box: 220 wide × 120 tall (varies
+                    // slightly with category count; clamp covers it).
+                    const container = containerRef.current;
+                    const cw = container?.offsetWidth ?? 0;
+                    const ch = container?.offsetHeight ?? 0;
+                    const tipW = 220;
+                    const tipH = 120;
+                    const pad = 8;
+                    let left = hover.x + 12;
+                    let top = hover.y + 12;
+                    if (left + tipW > cw - pad) {
+                        // Flip to the left of the cursor.
+                        left = Math.max(pad, hover.x - tipW - 12);
+                    }
+                    if (top + tipH > ch - pad) {
+                        // Flip above the cursor.
+                        top = Math.max(pad, hover.y - tipH - 12);
+                    }
+                    return (
+                        <div
+                            role="tooltip"
+                            className="pointer-events-none absolute z-10 max-w-[220px] min-w-[180px] rounded-md border bg-popover p-2 text-xs shadow-md"
+                            style={{ left, top }}
+                        >
+                            <p className="font-medium">
+                                {formatDateLabel(hover.cell.ymd)}
+                            </p>
+                            <p className="text-muted-foreground">
+                                Total:{' '}
+                                <span className="font-mono tabular-nums">
+                                    {formatMoney(
+                                        hover.cell.expense,
+                                        currency,
+                                    )}
+                                </span>
+                            </p>
+                            {hover.cell.byCategory.length > 0 ? (
+                                <ul className="mt-1 flex flex-col gap-0.5 border-t pt-1">
+                                    {hover.cell.byCategory.map((c) => (
+                                        <li
+                                            key={c.name}
+                                            className="flex items-center justify-between gap-3"
+                                        >
+                                            <span>{c.name}</span>
+                                            <span className="font-mono tabular-nums text-muted-foreground">
+                                                {formatMoney(
+                                                    c.amount,
+                                                    currency,
+                                                )}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : hover.cell.expense === 0 ? (
+                                <p className="mt-1 text-muted-foreground">
+                                    No spending.
+                                </p>
+                            ) : null}
+                        </div>
+                    );
+                })()
             ) : null}
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>Less</span>
@@ -547,8 +656,11 @@ function formatDateLabel(ymd: string): string {
 }
 
 function heatmapColor(ratio: number): string {
-    if (ratio === 0) return 'hsl(var(--muted))';
-    // Five steps from muted to a saturated emerald.
+    // Empty cells: GitHub-light's near-white background. Hard-coded
+    // rather than `hsl(var(--muted))` because that CSS-var path
+    // resolves to black on this app's theme. The constant looks the
+    // same on both light + dark themes here.
+    if (ratio === 0) return '#ebedf0';
     const steps = [
         'hsl(142 30% 80%)',
         'hsl(142 45% 65%)',
