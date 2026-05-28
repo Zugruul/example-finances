@@ -499,7 +499,87 @@ export default async function TransactionsListPage(props: {
             ) : null}
             </TemplateHoverRoot>
 
-            {canRecord && accounts.length > 0 ? (
+            {(() => {
+                if (!canRecord) return null;
+                const openAccounts = accounts.filter((a) => !a.isClosed);
+                const visibleCategories = categories.filter(
+                    (c) => !c.isArchived,
+                );
+                // Blocking prerequisite: no open accounts means recording
+                // is impossible. Render a guided callout in place of the
+                // form rather than silently hiding it (the old behavior).
+                if (openAccounts.length === 0) {
+                    return (
+                        <Card id="new-transaction-form">
+                            <CardHeader>
+                                <CardTitle>Before you can record</CardTitle>
+                            </CardHeader>
+                            <CardContent className="flex flex-col gap-3">
+                                <p className="text-sm text-muted-foreground">
+                                    A transaction has to live on an account.
+                                    This tenant doesn't have any open
+                                    accounts yet — every existing account is
+                                    archived or closed.
+                                </p>
+                                <ul className="flex flex-col gap-2 text-sm">
+                                    <li className="flex items-center gap-2">
+                                        <span className="inline-flex size-5 items-center justify-center rounded-full border text-xs">
+                                            1
+                                        </span>
+                                        <Link
+                                            href={`/tenants/${tenantId}/accounts`}
+                                            className="text-sky-600 hover:underline dark:text-sky-400"
+                                        >
+                                            Create an account
+                                        </Link>
+                                        <span className="text-muted-foreground">
+                                            — pick a name, type, currency.
+                                        </span>
+                                    </li>
+                                    {visibleCategories.length === 0 ? (
+                                        <li className="flex items-center gap-2">
+                                            <span className="inline-flex size-5 items-center justify-center rounded-full border text-xs text-muted-foreground">
+                                                2
+                                            </span>
+                                            <Link
+                                                href={`/tenants/${tenantId}/categories`}
+                                                className="text-sky-600 hover:underline dark:text-sky-400"
+                                            >
+                                                Optionally, create categories
+                                            </Link>
+                                            <span className="text-muted-foreground">
+                                                — so you can group spending.
+                                            </span>
+                                        </li>
+                                    ) : null}
+                                </ul>
+                            </CardContent>
+                        </Card>
+                    );
+                }
+                return null;
+            })()}
+            {canRecord &&
+            accounts.filter((a) => !a.isClosed).length > 0 &&
+            categories.filter((c) => !c.isArchived).length === 0 ? (
+                <Card>
+                    <CardContent className="flex items-center gap-3 p-3 text-sm">
+                        <Badge variant="outline">tip</Badge>
+                        <span className="text-muted-foreground">
+                            No categories yet —{' '}
+                            <Link
+                                href={`/tenants/${tenantId}/categories`}
+                                className="text-sky-600 hover:underline dark:text-sky-400"
+                            >
+                                create some
+                            </Link>{' '}
+                            to organize your spending in the dashboard
+                            charts.
+                        </span>
+                    </CardContent>
+                </Card>
+            ) : null}
+            {canRecord && accounts.filter((a) => !a.isClosed).length > 0 ? (
                 <Card id="new-transaction-form">
                     <CardHeader>
                         <CardTitle>
