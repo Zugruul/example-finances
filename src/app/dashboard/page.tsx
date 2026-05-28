@@ -731,6 +731,23 @@ export default async function DashboardPage({
     const monthlyCurrency =
         budgets[0]?.currency ?? accountBalances[0]?.currency ?? 'USD';
 
+    // Currency-bucket awareness: when the user's accounts span more
+    // than one currency, every aggregate widget below (This month,
+    // Top spending, Budgets, Forecast, Subscriptions) is summing
+    // mixed-currency amounts as if they were the same unit. We do
+    // not do FX in MVP, so the safe fallback is: clearly mark
+    // widgets that aren't currency-bucketed, and tell the user which
+    // currency the numbers are being formatted as.
+    const scopedAccountBalances = currentTenantId
+        ? accountBalances.filter(
+              (b) => String(b.tenantId) === currentTenantId,
+          )
+        : accountBalances;
+    const scopedCurrencies = new Set(
+        scopedAccountBalances.map((b) => b.currency),
+    );
+    const isMixedCurrency = scopedCurrencies.size > 1;
+
     // Subscription / recurring spend (monthly-normalized). Only counts
     // expense-type templates — income templates (e.g. salary) aren't
     // subscriptions.
@@ -867,6 +884,21 @@ export default async function DashboardPage({
                     value={validatedRequestedTenantId}
                 />
             </header>
+
+            {isMixedCurrency ? (
+                <div className="flex flex-wrap items-center gap-3 rounded-md border border-amber-500/40 bg-amber-50/60 px-3 py-2 text-xs text-amber-900 dark:bg-amber-900/20 dark:text-amber-200">
+                    <span className="font-medium">Mixed currencies in scope</span>
+                    <span className="text-amber-900/70 dark:text-amber-200/70">
+                        Accounts span{' '}
+                        {Array.from(scopedCurrencies).sort().join(', ')}. The
+                        aggregate widgets below (This month, Top spending,
+                        Budgets, Forecast) display values in{' '}
+                        <span className="font-mono">{monthlyCurrency}</span>{' '}
+                        and sum without FX conversion. Net worth is bucketed
+                        per currency.
+                    </span>
+                </div>
+            ) : null}
 
             {activeTenants.length > 0 ? (
                 <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
