@@ -5,6 +5,7 @@ import { readModels } from '@/sorc';
 import { createAccountAction } from '@/server/accounts';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/submit-button';
+import { AccountsCreateForm } from './accounts-create-form';
 import {
     Card,
     CardContent,
@@ -195,66 +196,10 @@ export default async function AccountsListPage(props: {
                         <CardTitle>Create account</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <form
+                        <AccountsCreateForm
                             action={create}
-                            className="grid gap-3 sm:grid-cols-2"
-                        >
-                            <div className="flex flex-col gap-1.5 sm:col-span-2">
-                                <Label htmlFor="name">Name</Label>
-                                <Input
-                                    id="name"
-                                    name="name"
-                                    required
-                                    maxLength={120}
-                                    placeholder="Everyday checking"
-                                />
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="accountType">Type</Label>
-                                <select
-                                    id="accountType"
-                                    name="accountType"
-                                    defaultValue="checking"
-                                    className="h-9 rounded-md border bg-background px-3 text-sm"
-                                >
-                                    <option value="checking">checking</option>
-                                    <option value="savings">savings</option>
-                                    <option value="credit">credit</option>
-                                    <option value="cash">cash</option>
-                                    <option value="investment">
-                                        investment
-                                    </option>
-                                </select>
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="currency">Currency</Label>
-                                <Input
-                                    id="currency"
-                                    name="currency"
-                                    required
-                                    defaultValue={defaultCurrency}
-                                    maxLength={3}
-                                    pattern="[A-Za-z]{3}"
-                                    className="uppercase"
-                                />
-                            </div>
-                            <div className="flex flex-col gap-1.5 sm:col-span-2">
-                                <Label htmlFor="openingBalance">
-                                    Opening balance
-                                </Label>
-                                <Input
-                                    id="openingBalance"
-                                    name="openingBalance"
-                                    type="text"
-                                    inputMode="decimal"
-                                    defaultValue="0"
-                                    placeholder="0.00"
-                                />
-                            </div>
-                            <div className="sm:col-span-2">
-                                <SubmitButton pendingLabel="Creating…">Create account</SubmitButton>
-                            </div>
-                        </form>
+                            defaultCurrency={defaultCurrency}
+                        />
                     </CardContent>
                 </Card>
             ) : null}

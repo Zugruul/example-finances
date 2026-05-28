@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/empty-state';
 import { BreadcrumbBar } from '@/components/breadcrumb-bar';
 import { TagIcon } from 'lucide-react';
+import { CategoriesCreateForm } from './categories-create-form';
 
 type Params = { tenantId: string };
 
@@ -302,75 +303,13 @@ export default async function CategoriesPage(props: {
                         <CardTitle>New category</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <form
+                        <CategoriesCreateForm
                             action={create}
-                            className="grid gap-3 sm:grid-cols-2"
-                        >
-                            <div className="flex flex-col gap-1.5 sm:col-span-2">
-                                <Label htmlFor="name">Name</Label>
-                                <Input
-                                    id="name"
-                                    name="name"
-                                    required
-                                    maxLength={120}
-                                    placeholder="Groceries"
-                                />
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="categoryType">Type</Label>
-                                <select
-                                    id="categoryType"
-                                    name="categoryType"
-                                    defaultValue="expense"
-                                    className="h-9 rounded-md border bg-background px-3 text-sm"
-                                >
-                                    <option value="income">income</option>
-                                    <option value="expense">expense</option>
-                                    <option value="transfer">transfer</option>
-                                </select>
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="parentId">Parent</Label>
-                                <select
-                                    id="parentId"
-                                    name="parentId"
-                                    defaultValue=""
-                                    className="h-9 rounded-md border bg-background px-3 text-sm"
-                                >
-                                    <option value="">(no parent)</option>
-                                    {docs.map((p) => (
-                                        <option
-                                            key={String(p.categoryId)}
-                                            value={String(p.categoryId)}
-                                        >
-                                            {p.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="color">Color</Label>
-                                <Input
-                                    id="color"
-                                    name="color"
-                                    type="text"
-                                    placeholder="#3b82f6"
-                                    pattern="#[0-9a-fA-F]{6}"
-                                />
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="icon">Icon</Label>
-                                <Input
-                                    id="icon"
-                                    name="icon"
-                                    type="text"
-                                    placeholder="ShoppingCart"
-                                />
-                            </div>
-                            <div className="sm:col-span-2">
-                                <SubmitButton pendingLabel="Creating…">Create category</SubmitButton>
-                            </div>
-                        </form>
+                            parents={docs.map((p) => ({
+                                categoryId: String(p.categoryId),
+                                name: p.name,
+                            }))}
+                        />
                     </CardContent>
                 </Card>
             ) : null}

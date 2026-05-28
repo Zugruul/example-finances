@@ -9,6 +9,7 @@ import {
 } from '@/server/budgets';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/submit-button';
+import { BudgetsCreateForm } from './budgets-create-form';
 import {
     Card,
     CardContent,
@@ -289,74 +290,13 @@ export default async function BudgetsPage(props: {
                         <CardTitle>New budget</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <form
+                        <BudgetsCreateForm
                             action={create}
-                            className="grid gap-3 sm:grid-cols-2"
-                        >
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="categoryId">Category</Label>
-                                <select
-                                    id="categoryId"
-                                    name="categoryId"
-                                    required
-                                    className="h-9 rounded-md border bg-background px-3 text-sm"
-                                >
-                                    {eligibleCategories.map((c) => (
-                                        <option
-                                            key={String(c.categoryId)}
-                                            value={String(c.categoryId)}
-                                        >
-                                            {c.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="currency">Currency</Label>
-                                <Input
-                                    id="currency"
-                                    name="currency"
-                                    required
-                                    defaultValue="USD"
-                                    maxLength={3}
-                                    pattern="[A-Za-z]{3}"
-                                    className="uppercase"
-                                />
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="monthlyAmount">
-                                    Monthly amount
-                                </Label>
-                                <Input
-                                    id="monthlyAmount"
-                                    name="monthlyAmount"
-                                    type="text"
-                                    inputMode="decimal"
-                                    placeholder="500.00"
-                                    required
-                                />
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="rolloverPolicy">
-                                    Rollover
-                                </Label>
-                                <select
-                                    id="rolloverPolicy"
-                                    name="rolloverPolicy"
-                                    defaultValue="none"
-                                    className="h-9 rounded-md border bg-background px-3 text-sm"
-                                >
-                                    <option value="none">none</option>
-                                    <option value="carry-forward">
-                                        carry-forward
-                                    </option>
-                                    <option value="reset">reset</option>
-                                </select>
-                            </div>
-                            <div className="sm:col-span-2">
-                                <SubmitButton pendingLabel="Creating…">Create budget</SubmitButton>
-                            </div>
-                        </form>
+                            eligibleCategories={eligibleCategories.map((c) => ({
+                                categoryId: String(c.categoryId),
+                                name: c.name,
+                            }))}
+                        />
                     </CardContent>
                 </Card>
             ) : null}

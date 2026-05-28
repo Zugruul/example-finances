@@ -8,6 +8,7 @@ import {
 } from '@/server/tenants';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/submit-button';
+import { InviteMemberForm } from './invite-member-form';
 import {
     Card,
     CardContent,
@@ -134,41 +135,7 @@ export default async function TenantDetailPage(props: {
                         <CardTitle>Invite a member</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <form action={invite} className="flex flex-col gap-3 sm:flex-row">
-                            <div className="flex flex-1 flex-col gap-1.5">
-                                <Label htmlFor="email" className="text-sm">
-                                    Email
-                                </Label>
-                                <Input
-                                    id="email"
-                                    name="email"
-                                    type="email"
-                                    required
-                                    placeholder="teammate@example.com"
-                                />
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="role" className="text-sm">
-                                    Role
-                                </Label>
-                                <select
-                                    id="role"
-                                    name="role"
-                                    defaultValue="member"
-                                    className="h-9 rounded-md border bg-background px-3 text-sm"
-                                >
-                                    <option value="viewer">viewer</option>
-                                    <option value="member">member</option>
-                                    <option value="admin">admin</option>
-                                </select>
-                            </div>
-                            <SubmitButton
-                                className="self-end"
-                                pendingLabel="Inviting…"
-                            >
-                                Invite
-                            </SubmitButton>
-                        </form>
+                        <InviteMemberForm action={invite} />
                     </CardContent>
                 </Card>
             ) : null}

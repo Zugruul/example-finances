@@ -23,6 +23,7 @@ import { EmptyState } from '@/components/empty-state';
 import { BreadcrumbBar } from '@/components/breadcrumb-bar';
 import { FilterTabs } from '@/components/filter-tabs';
 import { RotateCwIcon } from 'lucide-react';
+import { RecurringCreateForm } from './recurring-create-form';
 import { formatMoney } from '@/lib/money';
 
 type Params = { tenantId: string };
@@ -292,147 +293,22 @@ export default async function RecurringPage(props: {
                         <CardTitle>New template</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <form
+                        <RecurringCreateForm
                             action={create}
-                            className="grid gap-3 sm:grid-cols-2"
-                        >
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="accountId">Account</Label>
-                                <select
-                                    id="accountId"
-                                    name="accountId"
-                                    required
-                                    className="h-9 rounded-md border bg-background px-3 text-sm"
-                                >
-                                    {accounts
-                                        .filter((a) => !a.isClosed)
-                                        .map((a) => (
-                                            <option
-                                                key={String(a.accountId)}
-                                                value={String(a.accountId)}
-                                            >
-                                                {a.name} ({a.currency})
-                                            </option>
-                                        ))}
-                                </select>
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="categoryId">Category</Label>
-                                <select
-                                    id="categoryId"
-                                    name="categoryId"
-                                    defaultValue=""
-                                    className="h-9 rounded-md border bg-background px-3 text-sm"
-                                >
-                                    <option value="">(none)</option>
-                                    {categories
-                                        .filter((c) => !c.isArchived)
-                                        .map((c) => (
-                                            <option
-                                                key={String(c.categoryId)}
-                                                value={String(c.categoryId)}
-                                            >
-                                                {c.name}
-                                            </option>
-                                        ))}
-                                </select>
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="transactionType">Type</Label>
-                                <select
-                                    id="transactionType"
-                                    name="transactionType"
-                                    defaultValue="expense"
-                                    className="h-9 rounded-md border bg-background px-3 text-sm"
-                                >
-                                    <option value="income">income</option>
-                                    <option value="expense">expense</option>
-                                </select>
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="amount">Amount</Label>
-                                <Input
-                                    id="amount"
-                                    name="amount"
-                                    type="text"
-                                    inputMode="decimal"
-                                    placeholder="100.00"
-                                    required
-                                />
-                            </div>
-                            <div className="flex flex-col gap-1.5 sm:col-span-2">
-                                <Label htmlFor="description">
-                                    Description
-                                </Label>
-                                <Input
-                                    id="description"
-                                    name="description"
-                                    placeholder="Rent"
-                                />
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="cadence-kind">Cadence</Label>
-                                <select
-                                    id="cadence-kind"
-                                    name="cadence-kind"
-                                    defaultValue="monthly"
-                                    className="h-9 rounded-md border bg-background px-3 text-sm"
-                                >
-                                    <option value="daily">daily</option>
-                                    <option value="weekly">weekly</option>
-                                    <option value="biweekly">
-                                        every 2 weeks
-                                    </option>
-                                    <option value="monthly">monthly</option>
-                                    <option value="yearly">yearly</option>
-                                </select>
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="cadence-dayOfMonth">
-                                    Day-of-month / -week
-                                </Label>
-                                <Input
-                                    id="cadence-dayOfMonth"
-                                    name="cadence-dayOfMonth"
-                                    type="number"
-                                    min={1}
-                                    max={31}
-                                    defaultValue={1}
-                                />
-                                <Input
-                                    name="cadence-dayOfWeek"
-                                    type="hidden"
-                                    defaultValue={1}
-                                />
-                                <Input
-                                    name="cadence-month"
-                                    type="hidden"
-                                    defaultValue={1}
-                                />
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="startsOn">Starts on</Label>
-                                <Input
-                                    id="startsOn"
-                                    name="startsOn"
-                                    type="date"
-                                    required
-                                />
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="endsOn">
-                                    Ends on (optional)
-                                </Label>
-                                <Input
-                                    id="endsOn"
-                                    name="endsOn"
-                                    type="date"
-                                />
-                            </div>
-                            <div className="sm:col-span-2">
-                                <SubmitButton pendingLabel="Creating…">Create template</SubmitButton>
-                            </div>
-                        </form>
+                            accounts={accounts
+                                .filter((a) => !a.isClosed)
+                                .map((a) => ({
+                                    accountId: String(a.accountId),
+                                    name: a.name,
+                                    currency: a.currency,
+                                }))}
+                            categories={categories
+                                .filter((c) => !c.isArchived)
+                                .map((c) => ({
+                                    categoryId: String(c.categoryId),
+                                    name: c.name,
+                                }))}
+                        />
                     </CardContent>
                 </Card>
             ) : null}
