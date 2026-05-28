@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useMemo, useOptimistic, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { MoreHorizontalIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -185,6 +185,19 @@ export function TransactionsLedger({
     const [mode, setMode] = useState<ViewMode>('ledger');
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [isPending, startTransition] = useTransition();
+    // Optimistic strike-through: ids the user just clicked Revert/Reapply/
+    // Undo on. While the server action is in flight (and even briefly
+    // after, until the revalidated read-model lands), the row reads as
+    // visually reverted so the click feels instant. React auto-resets
+    // this once the transition resolves.
+    const [optimisticReverting, addOptimisticReverting] = useOptimistic<
+        Set<string>,
+        string[]
+    >(new Set(), (state, ids) => {
+        const next = new Set(state);
+        for (const id of ids) next.add(id);
+        return next;
+    });
 
     const chains = useMemo(() => buildChainStates(rows), [rows]);
 
@@ -222,7 +235,11 @@ export function TransactionsLedger({
         if (ids.length === 0) return;
         const fd = new FormData();
         fd.set('ids', ids.join(','));
+        // Clear selection eagerly so the row checkboxes uncheck the
+        // moment the user clicks Revert (matches the visual flip).
+        setSelected(new Set());
         startTransition(async () => {
+            addOptimisticReverting(ids);
             try {
                 await revertAction(fd);
             } catch (err) {
@@ -316,20 +333,25 @@ export function TransactionsLedger({
                             cs.chainRootId !== r.transactionId;
                         const sign =
                             r.transactionType === 'income' ? '+' : '−';
+                        const isOptimisticallyReverting =
+                            optimisticReverting.has(r.transactionId);
+                        const showAsReverted =
+                            cs.isCurrentlyReverted ||
+                            cs.isRevert ||
+                            isOptimisticallyReverting;
                         return (
                             <tr
                                 key={r.transactionId}
                                 data-template-id={r.templateId}
                                 className={
                                     'border-b last:border-b-0 transition-colors data-[template-active=true]:bg-amber-100/60 data-[template-active=true]:dark:bg-amber-900/30 ' +
-                                    // Revert rows AND currently-reverted
-                                    // originals both render struck-through
-                                    // so the chain reads as a paired
-                                    // cancellation at a glance.
-                                    (cs.isCurrentlyReverted || cs.isRevert
+                                    (showAsReverted
                                         ? 'opacity-60 line-through decoration-muted-foreground/40'
                                         : '') +
-                                    (cs.isRevert ? ' bg-muted/30' : '')
+                                    (cs.isRevert ? ' bg-muted/30' : '') +
+                                    (isOptimisticallyReverting
+                                        ? ' bg-amber-50/60 dark:bg-amber-900/20'
+                                        : '')
                                 }
                             >
                                 {canRecord ? (
@@ -365,12 +387,21 @@ export function TransactionsLedger({
                                             revert
                                         </Badge>
                                     ) : null}
-                                    {cs.isCurrentlyReverted ? (
+                                    {cs.isCurrentlyReverted &&
+                                    !isOptimisticallyReverting ? (
                                         <Badge
                                             variant="outline"
                                             className="ml-2 text-[10px]"
                                         >
                                             reverted
+                                        </Badge>
+                                    ) : null}
+                                    {isOptimisticallyReverting ? (
+                                        <Badge
+                                            variant="outline"
+                                            className="ml-2 text-[10px] border-amber-500/60 text-amber-700 dark:text-amber-300"
+                                        >
+                                            reverting…
                                         </Badge>
                                     ) : null}
                                 </td>

@@ -16,6 +16,7 @@ import {
 } from './quick-pick-templates';
 import { TemplateHoverRoot } from './template-hover-root';
 import { Button } from '@/components/ui/button';
+import { SubmitButton } from '@/components/submit-button';
 import {
     Card,
     CardContent,
@@ -654,11 +655,17 @@ export default async function TransactionsListPage(props: {
                                 />
                             </div>
                             <div className="flex items-center gap-3 sm:col-span-2">
-                                <Button type="submit">
+                                <SubmitButton
+                                    pendingLabel={
+                                        formDefaults
+                                            ? 'Recording…'
+                                            : 'Recording…'
+                                    }
+                                >
                                     {formDefaults
                                         ? `Record & mark template applied`
                                         : 'Record'}
-                                </Button>
+                                </SubmitButton>
                                 {formDefaults ? (
                                     <Link
                                         href={`/tenants/${tenantId}/transactions#new-transaction-form`}
@@ -761,7 +768,9 @@ export default async function TransactionsListPage(props: {
                                 />
                             </div>
                             <div className="sm:col-span-2">
-                                <Button type="submit">Transfer</Button>
+                                <SubmitButton pendingLabel="Transferring…">
+                                    Transfer
+                                </SubmitButton>
                             </div>
                         </form>
                     </CardContent>
