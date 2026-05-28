@@ -184,33 +184,30 @@ export const seedTenantAction = withActorContext(
             );
         }
 
-        // --- 5. Sample transactions across the last 6 months ---
-        // Pseudo-random but deterministic per-tenant so re-seeding the
-        // same tenant produces identical data. Avoids "shuffled twice"
-        // confusion when debugging.
-        const rng = mulberry32(hashTenantId(tenantId));
-        const expenseCategories = plan.categories.filter(
-            (c) => c.type === 'expense',
-        );
-        const incomeCategories = plan.categories.filter(
-            (c) => c.type === 'income',
-        );
-        for (let i = 0; i < plan.transactionCount; i++) {
-            const isIncome = rng() < 0.25;
-            const cat = isIncome
-                ? incomeCategories[Math.floor(rng() * incomeCategories.length)]!
-                : expenseCategories[
-                      Math.floor(rng() * expenseCategories.length)
-                  ]!;
-            const account = plan.accounts[Math.floor(rng() * 2)]!;
-            const accountId = accountIdByName.get(account.name)!;
-            const categoryId = categoryIdByName.get(cat.name);
-            const monthOffset = Math.floor(rng() * 6);
-            const day = 1 + Math.floor(rng() * 27);
-            const occurredOn = monthOffsetYmd(monthOffset, day);
-            const amount = isIncome
-                ? 50_000 + Math.floor(rng() * 200_000)
-                : 500 + Math.floor(rng() * 20_000);
+        // --- 5. Deterministic transactions across the past N months.
+        // No randomness — every (date, amount, description) is a pure
+        // function of the calendar window. Two runs with the same
+        // current date produce identical events (modulo new uuids on
+        // the events themselves). This makes seeded tenants directly
+        // comparable across snapshots / runs.
+        const monthsBack = plan.monthsBack;
+        const today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
+        const windowStart = new Date(today);
+        windowStart.setUTCMonth(windowStart.getUTCMonth() - monthsBack);
+
+        const recordTx = async (params: {
+            occurredOn: string;
+            accountName: string;
+            categoryName: string;
+            amount: number;
+            description: string;
+            type: 'income' | 'expense';
+            revertsTransactionIds?: SorcUUID[];
+        }): Promise<SorcUUID> => {
+            const accountId = accountIdByName.get(params.accountName);
+            const categoryId = categoryIdByName.get(params.categoryName);
+            if (!accountId) throw new Error(`No account ${params.accountName}`);
             const transactionId = uuidv7() as SorcUUID;
             const stream =
                 `transaction-${transactionId}` as TransactionStreamInstance;
@@ -221,16 +218,376 @@ export const seedTenantAction = withActorContext(
                     tenantId: tenantId as SorcUUID,
                     accountId,
                     categoryId,
-                    amount,
+                    amount: params.amount,
                     currency: 'USD',
-                    occurredOn,
-                    description: `Seeded ${cat.name.toLowerCase()}`,
-                    transactionType: isIncome ? 'income' : 'expense',
+                    occurredOn: params.occurredOn,
+                    description: params.description,
+                    transactionType: params.type,
                     recordedByUserId: actorId,
+                    revertsTransactionIds: params.revertsTransactionIds,
                     stream,
                 } as never,
                 { store: 'mongostore' as never, stream },
             );
+            return transactionId;
+        };
+
+        // --- 5a. Materialize each recurring template across the
+        // window. Bi-weekly paychecks + monthly bills + streaming
+        // subscriptions all land as concrete TransactionRecorded
+        // events so the heatmap + charts populate immediately.
+        for (const t of plan.templates) {
+            const dates = cadenceDates(t.cadence, windowStart, today);
+            for (const d of dates) {
+                await recordTx({
+                    occurredOn: d,
+                    accountName: t.accountName,
+                    categoryName: t.categoryName,
+                    amount: t.amount,
+                    description: t.description,
+                    type: t.type,
+                });
+            }
+        }
+
+        // --- 5b. Deterministic everyday spending. Each rule fires on
+        // a specific weekday with a fixed amount and description; the
+        // cycle index (which week in the window) chooses from a
+        // round-robin variant list so the descriptions feel alive
+        // without using a PRNG.
+        //
+        // Day-of-week numbering: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu,
+        // 5=Fri, 6=Sat.
+        type DowRule = {
+            dow: number;
+            category: string;
+            account: 'Checking' | 'Credit card';
+            amounts: number[]; // minor units; cycles per occurrence
+            descriptions: string[]; // cycles per occurrence
+        };
+        const dowRules: DowRule[] = [
+            // Big weekly grocery run on Sunday
+            {
+                dow: 0,
+                category: 'Groceries',
+                account: 'Checking',
+                amounts: [8_540, 9_215, 7_320, 10_180, 6_995, 8_410],
+                descriptions: [
+                    'Whole Foods',
+                    'Trader Joes',
+                    'Safeway',
+                    'Costco run',
+                    'Sprouts',
+                    'Whole Foods',
+                ],
+            },
+            // Midweek grocery top-up on Wednesday
+            {
+                dow: 3,
+                category: 'Groceries',
+                account: 'Checking',
+                amounts: [3_420, 2_815, 4_005, 3_280, 2_975, 3_640],
+                descriptions: [
+                    'Corner deli',
+                    'Trader Joes',
+                    'Local market',
+                    'Corner deli',
+                    'Trader Joes',
+                    'Corner deli',
+                ],
+            },
+            // Weekday coffee — Mon, Tue, Thu (so ~3 per week)
+            {
+                dow: 1,
+                category: 'Coffee',
+                account: 'Credit card',
+                amounts: [575, 625, 545, 595, 525, 615],
+                descriptions: [
+                    'Starbucks',
+                    'Blue Bottle',
+                    'Philz',
+                    'Local cafe',
+                    'Peets',
+                    'Starbucks',
+                ],
+            },
+            {
+                dow: 2,
+                category: 'Coffee',
+                account: 'Credit card',
+                amounts: [495, 525, 585, 515, 565, 545],
+                descriptions: [
+                    'Local cafe',
+                    'Philz',
+                    'Blue Bottle',
+                    'Starbucks',
+                    'Peets',
+                    'Local cafe',
+                ],
+            },
+            {
+                dow: 4,
+                category: 'Coffee',
+                account: 'Credit card',
+                amounts: [635, 585, 555, 605, 525, 595],
+                descriptions: [
+                    'Blue Bottle',
+                    'Peets',
+                    'Starbucks',
+                    'Local cafe',
+                    'Philz',
+                    'Blue Bottle',
+                ],
+            },
+            // Friday dinner out
+            {
+                dow: 5,
+                category: 'Dining',
+                account: 'Credit card',
+                amounts: [4_280, 3_795, 5_120, 3_450, 4_625, 4_180],
+                descriptions: [
+                    'Sushi night',
+                    'Pizza',
+                    'Thai takeout',
+                    'Burger spot',
+                    'Pasta',
+                    'Ramen',
+                ],
+            },
+            // Saturday brunch / dinner
+            {
+                dow: 6,
+                category: 'Dining',
+                account: 'Credit card',
+                amounts: [3_540, 4_920, 3_115, 5_440, 3_780, 4_320],
+                descriptions: [
+                    'Brunch',
+                    'Mexican grill',
+                    'Brunch',
+                    'Steakhouse',
+                    'Brunch',
+                    'Mexican grill',
+                ],
+            },
+        ];
+
+        // Walk every day in the window once. For each DoW rule whose
+        // day-of-week matches, fire it with a per-occurrence cycle
+        // index so amounts + descriptions rotate deterministically.
+        const occurrenceByRule = new Map<number, number>();
+        for (
+            let d = new Date(windowStart);
+            d <= today;
+            d.setUTCDate(d.getUTCDate() + 1)
+        ) {
+            const ymd = d.toISOString().slice(0, 10);
+            const dow = d.getUTCDay();
+            for (let ri = 0; ri < dowRules.length; ri++) {
+                const rule = dowRules[ri]!;
+                if (rule.dow !== dow) continue;
+                const k = ri;
+                const idx = occurrenceByRule.get(k) ?? 0;
+                const amount = rule.amounts[idx % rule.amounts.length]!;
+                const description =
+                    rule.descriptions[idx % rule.descriptions.length]!;
+                await recordTx({
+                    occurredOn: ymd,
+                    accountName: rule.account,
+                    categoryName: rule.category,
+                    amount,
+                    description,
+                    type: 'expense',
+                });
+                occurrenceByRule.set(k, idx + 1);
+            }
+        }
+
+        // --- 5c. Per-month one-offs anchored to specific days. Fixed
+        // amounts and descriptions; one row per month so the picture
+        // includes the predictable monthly expenses too.
+        type MonthlyOneOff = {
+            day: number;
+            category: string;
+            account: 'Checking' | 'Credit card';
+            amounts: number[]; // cycles per month from oldest→newest
+            descriptions: string[];
+        };
+        const monthlyOneOffs: MonthlyOneOff[] = [
+            // 2 gas fill-ups per month (mid and end)
+            {
+                day: 9,
+                category: 'Gas',
+                account: 'Credit card',
+                amounts: [4_870, 5_215, 4_640, 5_510, 5_080, 4_920],
+                descriptions: ['Shell', 'Chevron', '76', 'Costco gas', 'Shell', 'Chevron'],
+            },
+            {
+                day: 24,
+                category: 'Gas',
+                account: 'Credit card',
+                amounts: [5_120, 4_680, 5_385, 4_770, 5_245, 4_905],
+                descriptions: ['76', 'Costco gas', 'Shell', 'Chevron', 'Costco gas', '76'],
+            },
+            // Utilities
+            {
+                day: 20,
+                category: 'Utilities',
+                account: 'Checking',
+                amounts: [9_245, 7_815, 8_640, 11_320, 10_215, 8_540],
+                descriptions: [
+                    'PG&E (electric + gas)',
+                    'PG&E (electric + gas)',
+                    'PG&E (electric + gas)',
+                    'PG&E (electric + gas)',
+                    'PG&E (electric + gas)',
+                    'PG&E (electric + gas)',
+                ],
+            },
+            // Transport (Uber + transit)
+            {
+                day: 6,
+                category: 'Transport',
+                account: 'Credit card',
+                amounts: [1_840, 2_240, 1_575, 2_650, 1_920, 2_115],
+                descriptions: ['Uber', 'Lyft', 'BART', 'Uber', 'Lyft', 'Caltrain'],
+            },
+            {
+                day: 27,
+                category: 'Transport',
+                account: 'Credit card',
+                amounts: [1_240, 1_815, 2_080, 1_465, 2_350, 1_695],
+                descriptions: ['Lyft', 'Uber', 'Caltrain', 'BART', 'Uber', 'Lyft'],
+            },
+            // Monthly entertainment (1 night out)
+            {
+                day: 17,
+                category: 'Entertainment',
+                account: 'Credit card',
+                amounts: [3_240, 4_820, 2_815, 6_120, 3_450, 4_640],
+                descriptions: [
+                    'Movie tickets',
+                    'Concert',
+                    'Bowling',
+                    'Concert',
+                    'Mini golf',
+                    'Movie tickets',
+                ],
+            },
+            // Pharmacy / health (most months)
+            {
+                day: 11,
+                category: 'Health',
+                account: 'Credit card',
+                amounts: [1_585, 2_240, 1_320, 3_410, 1_870, 2_115],
+                descriptions: ['CVS', 'Walgreens', 'Pharmacy', 'Co-pay', 'CVS', 'Walgreens'],
+            },
+            // Haircut every other month
+            {
+                day: 13,
+                category: 'Personal care',
+                account: 'Credit card',
+                amounts: [3_500, 0, 3_500, 0, 3_500, 0],
+                descriptions: ['Barber', '', 'Haircut', '', 'Barber', ''],
+            },
+            // Home goods (most months)
+            {
+                day: 23,
+                category: 'Home goods',
+                account: 'Credit card',
+                amounts: [4_220, 0, 6_815, 2_545, 0, 5_120],
+                descriptions: ['Target', '', 'IKEA', 'Target', '', 'Bed Bath & Beyond'],
+            },
+            // Clothing — only every couple months
+            {
+                day: 8,
+                category: 'Clothing',
+                account: 'Credit card',
+                amounts: [0, 12_440, 0, 8_215, 0, 14_980],
+                descriptions: ['', 'Uniqlo', '', 'Nike', '', 'Zara'],
+            },
+            // Freelance bonus — once in the window
+            {
+                day: 19,
+                category: 'Freelance',
+                account: 'Checking',
+                amounts: [0, 75_000, 0, 0, 0, 0],
+                descriptions: ['', 'Freelance project', '', '', '', ''],
+            },
+        ];
+
+        // Months in oldest→newest order — index 0 maps to the oldest
+        // month in the window, index `monthsBack-1` is the current
+        // (partial) month. Amounts/descriptions cycle in that order so
+        // a re-seed always produces the same rows for the same window.
+        const recordedExpenses: Array<{
+            id: SorcUUID;
+            ymd: string;
+            categoryName: string;
+            amount: number;
+            description: string;
+        }> = [];
+        for (let m = 0; m < monthsBack; m++) {
+            const monthOffset = monthsBack - 1 - m; // oldest first
+            for (const rule of monthlyOneOffs) {
+                const amount = rule.amounts[m] ?? 0;
+                if (amount === 0) continue;
+                const description = rule.descriptions[m] ?? '';
+                const occurredOn = monthOffsetYmd(monthOffset, rule.day);
+                // Skip future-dated rows for the current month.
+                if (occurredOn > today.toISOString().slice(0, 10)) continue;
+                const isIncome = rule.category === 'Freelance';
+                const id = await recordTx({
+                    occurredOn,
+                    accountName: rule.account,
+                    categoryName: rule.category,
+                    amount,
+                    description,
+                    type: isIncome ? 'income' : 'expense',
+                });
+                if (!isIncome) {
+                    recordedExpenses.push({
+                        id,
+                        ymd: occurredOn,
+                        categoryName: rule.category,
+                        amount,
+                        description,
+                    });
+                }
+            }
+        }
+
+        // --- 5d. Three "wrong-day correction" revert pairs spread
+        // across the window. Anchored at specific (monthOffset, day)
+        // so the seed reproduces the same corrections every run.
+        const revertAnchors: Array<{
+            monthOffset: number;
+            day: number;
+        }> = [
+            { monthOffset: 5, day: 17 }, // oldest-month entertainment
+            { monthOffset: 3, day: 23 }, // home goods
+            { monthOffset: 1, day: 17 }, // recent entertainment
+        ];
+        for (const anchor of revertAnchors) {
+            const targetYmd = monthOffsetYmd(anchor.monthOffset, anchor.day);
+            const target = recordedExpenses.find((e) => e.ymd === targetYmd);
+            if (!target) continue;
+            await recordTx({
+                occurredOn: nudgeDate(target.ymd, 1),
+                accountName: 'Credit card',
+                categoryName: target.categoryName,
+                amount: target.amount,
+                description: `Revert (wrong day): ${target.description}`,
+                type: 'income',
+                revertsTransactionIds: [target.id],
+            });
+            await recordTx({
+                occurredOn: nudgeDate(target.ymd, -2),
+                accountName: 'Credit card',
+                categoryName: target.categoryName,
+                amount: target.amount,
+                description: `Corrected: ${target.description}`,
+                type: 'expense',
+            });
         }
 
         revalidatePath(`/tenants/${tenantId}`);
@@ -265,21 +622,58 @@ function monthOffsetYmd(monthsAgo: number, day: number): string {
     return d.toISOString().slice(0, 10);
 }
 
-function hashTenantId(id: string): number {
-    let h = 2166136261;
-    for (let i = 0; i < id.length; i++) {
-        h ^= id.charCodeAt(i);
-        h = Math.imul(h, 16777619);
+/**
+ * Walk a cadence rule forward across the window and return every
+ * occurrence in YYYY-MM-DD form. Used to materialize recurring
+ * templates into concrete TransactionRecorded events at seed time
+ * so the bi-weekly paychecks + monthly bills show up in the
+ * heatmap + dashboard immediately.
+ */
+function cadenceDates(
+    cadence:
+        | { kind: 'monthly'; dayOfMonth: number }
+        | { kind: 'biweekly'; dayOfWeek: number },
+    windowStart: Date,
+    windowEnd: Date,
+): string[] {
+    const out: string[] = [];
+    if (cadence.kind === 'monthly') {
+        const cur = new Date(windowStart);
+        cur.setUTCDate(1);
+        while (cur <= windowEnd) {
+            const last = new Date(
+                Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth() + 1, 0),
+            ).getUTCDate();
+            const day = Math.min(cadence.dayOfMonth, last);
+            const occ = new Date(
+                Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth(), day),
+            );
+            if (occ >= windowStart && occ <= windowEnd) {
+                out.push(occ.toISOString().slice(0, 10));
+            }
+            cur.setUTCMonth(cur.getUTCMonth() + 1);
+        }
+    } else {
+        // biweekly: anchor on the first matching DoW in the window,
+        // then step by 14 days.
+        const start = new Date(windowStart);
+        const dow = start.getUTCDay();
+        const shift = (cadence.dayOfWeek - dow + 7) % 7;
+        start.setUTCDate(start.getUTCDate() + shift);
+        for (
+            let d = new Date(start);
+            d <= windowEnd;
+            d.setUTCDate(d.getUTCDate() + 14)
+        ) {
+            out.push(d.toISOString().slice(0, 10));
+        }
     }
-    return h >>> 0;
+    return out;
 }
 
-/** Tiny seeded PRNG (mulberry32) so seeded data is deterministic per tenant. */
-function mulberry32(a: number) {
-    return function () {
-        let t = (a += 0x6d2b79f5);
-        t = Math.imul(t ^ (t >>> 15), t | 1);
-        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
+/** Add (or subtract) `days` from a YYYY-MM-DD; returns YYYY-MM-DD. */
+function nudgeDate(ymd: string, days: number): string {
+    const d = new Date(ymd + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
 }
