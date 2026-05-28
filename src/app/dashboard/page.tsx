@@ -382,11 +382,13 @@ export default async function DashboardPage({
         netWorthSeries.push(...seriesReverse.reverse());
     }
 
-    // ----- Daily spending heatmap (last 84 days = 12 weeks) -----
+    // ----- Daily spending heatmap (last ~52 weeks) -----
     // Per-day totals AND a per-(day, category) breakdown so the hover
     // tooltip can list categories with their share. Uncategorized rows
     // surface under "Uncategorized" so the tooltip never says "Unknown".
-    const heatmapDays = 84;
+    // 364 days = 52 weeks exactly — fills the strip with no half-week
+    // remainder, GitHub-style.
+    const heatmapDays = 364;
     type DayBuckets = { total: number; byCategory: Map<string, number> };
     const heatmapMap = new Map<string, DayBuckets>();
     {
@@ -708,7 +710,7 @@ export default async function DashboardPage({
                             <CardHeader>
                                 <CardTitle>Daily spending</CardTitle>
                                 <p className="text-xs text-muted-foreground">
-                                    Last 12 weeks
+                                    Last 52 weeks
                                 </p>
                             </CardHeader>
                             <CardContent>
