@@ -27,24 +27,27 @@ export default async function AdminDashboardPage() {
         readModels.adminActivity.find({}),
     ]);
 
-    // Seed picker scoping: surface tenants the admin (and, when
-    // impersonating, the target) is a member of. Without this filter
-    // every tenant in the database showed up — a leak of cross-user
-    // workspace identity. Admins still have unfiltered visibility via
-    // /admin/users + audit log; the seed flow specifically is meant
-    // to populate workspaces the admin (or target) is responsible for.
-    const adminUserId = session?.user?.impersonation?.actorAdminId
-        ?? session?.user?.id
-        ?? null;
+    // Seed picker scoping: when impersonating, show ONLY the
+    // impersonated target's tenants (the admin is acting AS the
+    // target — seeing the admin's own tenants here is a leak of
+    // their identity into the impersonation session). When NOT
+    // impersonating, show the admin's own tenants. Admins still
+    // have unfiltered cross-tenant visibility via /admin/users +
+    // /admin/audit-log; the seed flow specifically targets
+    // workspaces of the currently-acting identity.
     const targetUserId = session?.user?.impersonation?.targetUserId ?? null;
-    const allowedUserIds = new Set<string>();
-    if (adminUserId) allowedUserIds.add(String(adminUserId));
-    if (targetUserId) allowedUserIds.add(String(targetUserId));
+    const seedAsUserId = targetUserId
+        ? String(targetUserId)
+        : session?.user?.id
+          ? String(session.user.id)
+          : null;
     const allowedTenantIds = new Set<string>();
-    for (const m of allMemberships) {
-        if (m.removedAt) continue;
-        if (allowedUserIds.has(String(m.userId))) {
-            allowedTenantIds.add(String(m.tenantId));
+    if (seedAsUserId) {
+        for (const m of allMemberships) {
+            if (m.removedAt) continue;
+            if (String(m.userId) === seedAsUserId) {
+                allowedTenantIds.add(String(m.tenantId));
+            }
         }
     }
     const seedableTenants = tenants.filter(
