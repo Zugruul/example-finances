@@ -8,11 +8,34 @@ import type {
     CommunicationProvider,
 } from './integration.events';
 
+/**
+ * IMPORTANT: this doc deliberately does NOT carry the `config` blob.
+ *
+ * The event `CommunicationIntegrationConnected.payload.config` is
+ * `@property({ tags: ['pii'] })` and cryptoshredded at the event-log
+ * layer. The framework's `afterRetrieval` plugin hook decrypts the
+ * payload BEFORE it reaches the read-model subscriber's `apply()`,
+ * so if `apply()` wrote `config` into the doc the read-model
+ * collection would end up holding plaintext credentials on disk — a
+ * much worse exposure than the events (events at rest are
+ * unreadable without the key; read-model docs are not).
+ *
+ * Resolution (cryptoshredding audit 2026-05-28, option 1): the doc
+ * holds only the indexable metadata (label, provider, status). The
+ * send worker resolves the credential at dispatch time by
+ * rehydrating the integration aggregate state from the event log
+ * (which routes through `afterRetrieval` → decryption → reducer
+ * chain) and reads `state.config` in-memory.
+ *
+ * Defense-in-depth: an attacker who gets read access to
+ * `rm_communication_integrations` sees only label + status — no
+ * credentials. They still need access to both the `events`
+ * collection AND the per-tenant key store to recover the credential.
+ */
 export type CommunicationIntegrationDoc = {
     integrationId: SorcUUID;
     tenantId: SorcUUID;
     provider: CommunicationProvider;
-    config: string; // JSON, cryptoshredded at the event layer
     label: string;
     status: 'enabled' | 'disabled';
 };
@@ -73,7 +96,6 @@ export function communicationIntegrationsApply(
                 integrationId: p.integrationId,
                 tenantId: p.tenantId,
                 provider: p.provider,
-                config: p.config,
                 label: p.label,
                 status: 'enabled',
             };
@@ -82,10 +104,6 @@ export function communicationIntegrationsApply(
             if (!state) return state;
             return {
                 ...state,
-                config:
-                    event.payload.config !== undefined
-                        ? event.payload.config
-                        : state.config,
                 label:
                     event.payload.label !== undefined
                         ? event.payload.label
