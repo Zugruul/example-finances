@@ -1,6 +1,8 @@
 import {
+    BarChart3Icon,
     CalendarIcon,
     HeartPulseIcon,
+    LayoutDashboardIcon,
     NotebookPenIcon,
     UsersIcon,
 } from 'lucide-react';
@@ -28,25 +30,39 @@ export const psychologistModule: ModuleManifest = {
     builtin: false,
     pages: [
         {
+            id: 'overview',
+            label: 'Overview',
+            href: '/psychologist',
+            icon: LayoutDashboardIcon,
+            order: 1,
+        },
+        {
             id: 'clients',
             label: 'Clients',
             href: '/psychologist/clients',
             icon: UsersIcon,
-            order: 1,
+            order: 2,
         },
         {
             id: 'sessions',
             label: 'Sessions',
             href: '/psychologist/sessions',
             icon: CalendarIcon,
-            order: 2,
+            order: 3,
         },
         {
             id: 'notes',
             label: 'Notes',
             href: '/psychologist/notes',
             icon: NotebookPenIcon,
-            order: 3,
+            order: 4,
+        },
+        {
+            id: 'reports',
+            label: 'Reports',
+            href: '/psychologist/reports',
+            icon: BarChart3Icon,
+            order: 5,
         },
     ],
     uninstallPolicy: 'archive',
