@@ -172,6 +172,26 @@ export const authConfig: NextAuthConfig = {
                         }
                     } else {
                         session.user.impersonation = raw.impersonation;
+                        // ----- Identity swap during impersonation -----
+                        // For all "what does the logged-in user see?"
+                        // queries to resolve as the impersonated target
+                        // (sidebar tenants list, /dashboard, /tenants/*,
+                        // /profile, /settings, etc.) we swap the visible
+                        // session userId to the target. Email / name /
+                        // image stay as the admin's so the top-bar still
+                        // identifies who is logged in. `isAdmin` stays as
+                        // the admin's true platform role so admin nav +
+                        // admin pages remain reachable while impersonating
+                        // — without this, the "Return to admin" path
+                        // would be the only escape and the admin couldn't
+                        // open /admin/users etc. mid-session.
+                        //
+                        // Server actions that need the underlying admin
+                        // id (grantAdmin, removeAdmin, startImpersonation,
+                        // endImpersonation, audit attribution) read it
+                        // from `session.user.impersonation.actorAdminId`
+                        // — see `resolveAdminId()` in src/server/admin.ts.
+                        session.user.id = raw.impersonation.targetUserId;
                     }
                 }
             }

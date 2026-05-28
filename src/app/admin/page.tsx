@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { readModels } from '@/sorc';
+import { auth } from '@/auth';
 import { listAuthUsers } from '@/lib/auth-users';
 import { Button } from '@/components/ui/button';
 import { BreadcrumbBar } from '@/components/breadcrumb-bar';
@@ -18,12 +19,37 @@ async function getRecentCutoff(): Promise<number> {
 
 export default async function AdminDashboardPage() {
     const recentCutoff = await getRecentCutoff();
+    const session = await auth();
     const [users, tenants, allMemberships, allActivity] = await Promise.all([
         listAuthUsers(1000),
         readModels.tenants.find({}),
         readModels.memberships.find({}),
         readModels.adminActivity.find({}),
     ]);
+
+    // Seed picker scoping: surface tenants the admin (and, when
+    // impersonating, the target) is a member of. Without this filter
+    // every tenant in the database showed up — a leak of cross-user
+    // workspace identity. Admins still have unfiltered visibility via
+    // /admin/users + audit log; the seed flow specifically is meant
+    // to populate workspaces the admin (or target) is responsible for.
+    const adminUserId = session?.user?.impersonation?.actorAdminId
+        ?? session?.user?.id
+        ?? null;
+    const targetUserId = session?.user?.impersonation?.targetUserId ?? null;
+    const allowedUserIds = new Set<string>();
+    if (adminUserId) allowedUserIds.add(String(adminUserId));
+    if (targetUserId) allowedUserIds.add(String(targetUserId));
+    const allowedTenantIds = new Set<string>();
+    for (const m of allMemberships) {
+        if (m.removedAt) continue;
+        if (allowedUserIds.has(String(m.userId))) {
+            allowedTenantIds.add(String(m.tenantId));
+        }
+    }
+    const seedableTenants = tenants.filter(
+        (t) => !t.archivedAt && allowedTenantIds.has(String(t.tenantId)),
+    );
 
     const activeImpersonations = new Map<string, number>();
     for (const a of allActivity) {
@@ -47,7 +73,6 @@ export default async function AdminDashboardPage() {
     ).length;
 
     const tenantsTotal = tenants.filter((t) => !t.archivedAt).length;
-    void allMemberships; // (intentionally unused — kept for symmetry / future stat)
 
     return (
         <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 p-8">
@@ -90,10 +115,24 @@ export default async function AdminDashboardPage() {
                         templates). Routes through a 3-phase confirmation —
                         the seed itself isn't reversible.
                     </p>
-                    <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        {tenants
-                            .filter((t) => !t.archivedAt)
-                            .map((t) => (
+                    {seedableTenants.length === 0 ? (
+                        <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                            No tenants you{' '}
+                            {session?.user?.impersonation
+                                ? 'or the impersonated user '
+                                : ''}
+                            belong to. Create one from{' '}
+                            <Link
+                                href="/tenants/new"
+                                className="text-sky-600 hover:underline dark:text-sky-400"
+                            >
+                                /tenants/new
+                            </Link>
+                            .
+                        </p>
+                    ) : (
+                        <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            {seedableTenants.map((t) => (
                                 <li key={String(t.tenantId)}>
                                     <Link
                                         href={`/admin/seed/${t.tenantId}?step=1`}
@@ -108,7 +147,8 @@ export default async function AdminDashboardPage() {
                                     </Link>
                                 </li>
                             ))}
-                    </ul>
+                        </ul>
+                    )}
                 </CardContent>
             </Card>
         </main>

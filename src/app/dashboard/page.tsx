@@ -112,7 +112,14 @@ export default async function DashboardPage({
         sp.tenantId && sp.tenantId !== 'all' ? sp.tenantId : undefined;
 
     const userId = session.user.id as SorcUUID;
-    const email = session.user.email ?? '';
+    // During impersonation `session.user.email` stays as the admin's
+    // (visible identity in the top bar), but the dashboard renders the
+    // target's world — invitations included. Resolve the effective
+    // email from the impersonation envelope when present.
+    const email =
+        session.user.impersonation?.targetEmail ??
+        session.user.email ??
+        '';
 
     const [allMemberships, invitationsByEmail] = await Promise.all([
         readModels.memberships.find({ userId }),

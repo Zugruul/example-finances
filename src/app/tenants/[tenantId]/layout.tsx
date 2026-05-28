@@ -21,12 +21,17 @@ export default async function TenantLayout({
     ).filter((m) => !m.removedAt && String(m.tenantId) === tenantId);
 
     if (memberships.length === 0) {
-        // Admin impersonation overrides the membership gate — admins can
-        // navigate into any tenant they're not a member of. The session
-        // callback already collapses an expired admin session to the
-        // target user, so reaching this branch under impersonation means
-        // the impersonated target is being routed correctly.
-        if (session.user.isAdmin !== true) {
+        // Admin-override: an admin can navigate into any tenant they're
+        // not a member of — useful for inspection. BUT while
+        // impersonating, the admin is acting as the target user; if the
+        // target isn't a member, the redirect kicks in just like it
+        // would for any non-member user. This preserves the "see-as-
+        // target" guarantee — the admin can't sneak past a tenant gate
+        // mid-impersonation. (The session-id swap means
+        // `session.user.id` is the target's here, so the memberships
+        // lookup above is already target-scoped.)
+        const isImpersonating = !!session.user.impersonation;
+        if (session.user.isAdmin !== true || isImpersonating) {
             redirect('/tenants');
         }
     }

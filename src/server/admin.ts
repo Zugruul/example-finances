@@ -40,6 +40,30 @@ async function requireAdmin() {
     return session;
 }
 
+/**
+ * Resolve the underlying ADMIN user id for the current session. During
+ * impersonation the session callback swaps `session.user.id` to the
+ * target so all "as a user" reads resolve correctly — but admin actions
+ * (start/end impersonation, grant/remove admin, audit attribution)
+ * still need the real admin id to credit/blame the right person. This
+ * helper returns the admin id from the impersonation envelope when
+ * present, otherwise `session.user.id` is the admin id (no swap
+ * happened).
+ *
+ * Caller must have already passed `requireAdmin()`. The returned id is
+ * not re-verified to be admin — `requireAdmin()`'s `isAdmin` check
+ * (which reads the admin's true role, untouched by impersonation) is
+ * the gate.
+ */
+function resolveAdminId(session: {
+    user?: { id?: string; impersonation?: { actorAdminId: string } };
+}): SorcUUID {
+    const imp = session.user?.impersonation;
+    const id = imp?.actorAdminId ?? session.user?.id;
+    if (!id) throw new Error('No admin id resolvable from session.');
+    return id as SorcUUID;
+}
+
 function adminStream(adminId: string): AdminActionsStreamInstance {
     return `admin-actions-${adminId}` as AdminActionsStreamInstance;
 }
@@ -51,7 +75,12 @@ function platformRoleStream(userId: string): PlatformRoleStreamInstance {
 export const startImpersonationAction = withActorContext(
     async (formData: FormData) => {
         const session = await requireAdmin();
-        const adminId = session.user!.id as SorcUUID;
+        if (session.user?.impersonation) {
+            throw new Error(
+                'Already impersonating — end the current session first.',
+            );
+        }
+        const adminId = resolveAdminId(session);
         const targetUserId = String(formData.get('targetUserId') ?? '');
         const targetEmail = String(formData.get('targetEmail') ?? '');
         if (!targetUserId || !targetEmail) {
@@ -89,7 +118,7 @@ export const startImpersonationAction = withActorContext(
 
 export const endImpersonationAction = withActorContext(async () => {
     const session = await requireAdmin();
-    const adminId = session.user!.id as SorcUUID;
+    const adminId = resolveAdminId(session);
 
     const sessionToken = await requireSessionToken();
     const client = await authMongoClientPromise;
@@ -115,7 +144,7 @@ export const endImpersonationAction = withActorContext(async () => {
 
 export const grantAdminAction = withActorContext(async (formData: FormData) => {
     const session = await requireAdmin();
-    const adminId = session.user!.id as SorcUUID;
+    const adminId = resolveAdminId(session);
     const targetUserId = String(formData.get('targetUserId') ?? '');
     if (!targetUserId) {
         throw new Error('Target user id is required.');
@@ -145,7 +174,7 @@ export const grantAdminAction = withActorContext(async (formData: FormData) => {
 export const removeAdminAction = withActorContext(
     async (formData: FormData) => {
         const session = await requireAdmin();
-        const adminId = session.user!.id as SorcUUID;
+        const adminId = resolveAdminId(session);
         const targetUserId = String(formData.get('targetUserId') ?? '');
         if (!targetUserId) {
             throw new Error('Target user id is required.');
