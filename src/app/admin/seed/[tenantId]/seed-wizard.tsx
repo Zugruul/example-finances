@@ -292,8 +292,7 @@ function PhaseConfirm({
                 <p>
                     You're about to write <strong>{total}</strong> records
                     into tenant <strong>{tenant.displayName}</strong>.
-                    Once seeded, the only way to remove them is per-
-                    record or by dropping the database.
+                    Once seeded removal of those may not be possible.
                 </p>
                 <ul className="ml-4 list-disc space-y-1 text-muted-foreground">
                     <li>Seeded transactions will count toward budgets.</li>
