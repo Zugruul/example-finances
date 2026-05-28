@@ -198,6 +198,18 @@ export function AppSidebar({
                             }
                         />
                     </SidebarMenuItem>
+                    <SidebarMenuItem>
+                        <SidebarMenuButton
+                            tooltip="Audit log"
+                            isActive={pathname === '/audit'}
+                            render={
+                                <Link href="/audit">
+                                    <ScrollTextIcon />
+                                    <span>Audit</span>
+                                </Link>
+                            }
+                        />
+                    </SidebarMenuItem>
                 </SidebarMenu>
                 <SidebarGroup className="group-data-[collapsible=icon]:hidden">
                     <SidebarGroupLabel

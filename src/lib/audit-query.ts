@@ -54,19 +54,37 @@ function tenantMatch(tenantId: string): Record<string, any> {
     };
 }
 
+function tenantsMatch(tenantIds: string[]): Record<string, any> {
+    // Multi-tenant OR: events whose stream matches ANY of the tenant
+    // streams, OR whose payload.tenantId is IN the set. Used by the
+    // top-level cross-tenant audit at /audit.
+    return {
+        $or: [
+            { stream: { $in: tenantIds.map((t) => `tenant-${t}`) } },
+            { 'payload.tenantId': { $in: tenantIds } },
+        ],
+    };
+}
+
 /**
  * One page of newest-first events for a tenant. When `olderThan` is
  * undefined, returns the most recent `limit` events. Otherwise returns
  * the next `limit` events strictly older than the cursor (with uuid
  * tiebreaker for same-millisecond entries).
+ *
+ * Pass `tenantIds` instead of `tenantId` to OR-match across multiple
+ * tenants (used by the cross-tenant audit at /audit).
  */
 export async function fetchAuditPage(params: {
-    tenantId: string;
+    tenantId?: string;
+    tenantIds?: string[];
     olderThan?: PagedCursor;
     limit?: number;
 }): Promise<PagedResult> {
     const limit = Math.max(1, Math.min(params.limit ?? 50, 200));
-    const match: Record<string, any> = tenantMatch(params.tenantId);
+    const match: Record<string, any> = params.tenantIds
+        ? tenantsMatch(params.tenantIds)
+        : tenantMatch(params.tenantId ?? '');
     if (params.olderThan) {
         const pa = new Date(params.olderThan.publishedAt);
         match.$and = [
