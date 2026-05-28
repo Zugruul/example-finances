@@ -14,8 +14,6 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { TenantSelectorPrefForm } from '@/components/tenant-selector-pref-form';
-import { resolveTenantSelectorPref } from '@/lib/tenant-selector-pref';
 import type { SorcUUID } from '@event-sorcerer/core';
 
 const CURRENCY_OPTIONS = [
@@ -38,7 +36,6 @@ export default async function SettingsPage() {
     const userId = session.user.id as SorcUUID;
     const profile = await readModels.usersById.findOne({ userId });
     const currentCurrency = profile?.defaultCurrency ?? 'USD';
-    const selectorPref = resolveTenantSelectorPref(profile?.tenantSelectorPref);
 
     return (
         <main className="mx-auto flex min-h-[60vh] max-w-2xl flex-col gap-6 p-8">
@@ -98,22 +95,6 @@ export default async function SettingsPage() {
                 </CardContent>
             </Card>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle>Tenant selector</CardTitle>
-                    <CardDescription>
-                        Choose how your tenants appear in the sidebar. With
-                        the threshold option, small tenant lists render as
-                        rows and larger lists collapse into a dropdown.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <TenantSelectorPrefForm
-                        currentMode={selectorPref.mode}
-                        currentThreshold={selectorPref.threshold ?? 3}
-                    />
-                </CardContent>
-            </Card>
         </main>
     );
 }

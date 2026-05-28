@@ -6,12 +6,7 @@ import { AppSidebar } from '@/components/app-sidebar';
 import { AppTopBar } from '@/components/app-top-bar';
 import { AppShellCommandPalette } from '@/components/app-shell-command-palette';
 import { type TenantOption } from '@/components/app-shell-tenant-selector';
-import {
-    resolveTenantSelectorPref,
-    shouldRenderAsList,
-} from '@/lib/tenant-selector-pref';
 import { readLastTenantCookie } from '@/lib/last-tenant-cookie';
-import type { SorcUUID } from '@event-sorcerer/core';
 
 export async function AppShell({ children }: { children: React.ReactNode }) {
     const session = await auth();
@@ -44,17 +39,6 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
     const isAdmin = session.user.isAdmin === true;
     const email = session.user.email ?? 'unknown';
 
-    const profile = await readModels.usersById.findOne({
-        userId: userId as SorcUUID,
-    });
-    const tenantSelectorPref = resolveTenantSelectorPref(
-        profile?.tenantSelectorPref,
-    );
-    const renderTenantsAsList = shouldRenderAsList(
-        tenantSelectorPref,
-        tenants.length,
-    );
-
     // Resolve the last-active tenant from the cookie when the user is
     // on a non-tenant route (the cookie is written by `tenants/[id]/layout`
     // on every tenant-page render). Validate membership so a stale cookie
@@ -74,7 +58,6 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
                     activeTenantId={activeTenantIdFromCookie}
                     isAdmin={isAdmin}
                     email={email}
-                    renderTenantsAsList={renderTenantsAsList}
                 />
                 <SidebarInset>
                     <AppTopBar email={email} />

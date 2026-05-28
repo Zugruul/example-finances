@@ -35,10 +35,7 @@ import {
     SidebarMenuItem,
     SidebarSeparator,
 } from '@/components/ui/sidebar';
-import {
-    AppShellTenantSelector,
-    type TenantOption,
-} from '@/components/app-shell-tenant-selector';
+import { type TenantOption } from '@/components/app-shell-tenant-selector';
 import { signOutAction } from '@/server/auth-actions';
 import { tenantSwitchHref } from '@/lib/tenant-switch-href';
 
@@ -47,7 +44,6 @@ export type AppSidebarProps = {
     activeTenantId: string | undefined;
     isAdmin: boolean;
     email: string;
-    renderTenantsAsList: boolean;
 };
 
 type NavItem = {
@@ -152,7 +148,6 @@ export function AppSidebar({
     activeTenantId,
     isAdmin,
     email,
-    renderTenantsAsList,
 }: AppSidebarProps) {
     const pathname = usePathname() ?? '';
 
@@ -231,7 +226,11 @@ export function AppSidebar({
                                 />
                             </SidebarMenuItem>
                         </SidebarMenu>
-                    ) : renderTenantsAsList ? (
+                    ) : (
+                        // Always render tenants as a list — the
+                        // dropdown-vs-list preference was removed in
+                        // anticipation of the modules wave where each
+                        // tenant becomes its own collapsable tree.
                         <SidebarMenu>
                             {tenants.map((t) => {
                                 const isActive = pathname.startsWith(
@@ -269,8 +268,6 @@ export function AppSidebar({
                                 );
                             })}
                         </SidebarMenu>
-                    ) : (
-                        <AppShellTenantSelector tenants={tenants} />
                     )}
                 </div>
             </SidebarHeader>
