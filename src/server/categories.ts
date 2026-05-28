@@ -12,7 +12,7 @@ import {
 import type { MembershipRole } from '@/domains/tenants';
 import type { SorcUUID } from '@event-sorcerer/core';
 import { withToast } from '@/lib/toast-url';
-import { withActorContext } from '@/lib/actor-context';
+import { withActorContext, effectiveAttributedId } from '@/lib/actor-context';
 import { revalidateTenantDashboards } from '@/lib/revalidate-dashboards';
 
 const CATEGORY_TYPES: readonly CategoryType[] = ['income', 'expense', 'transfer'];
@@ -86,6 +86,7 @@ export const createCategoryAction = withActorContext(
     async (tenantId: string, formData: FormData) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin']);
 
         const name = String(formData.get('name') ?? '').trim();
@@ -121,7 +122,7 @@ export const createCategoryAction = withActorContext(
                 parentId,
                 color,
                 icon,
-                createdByUserId: userId,
+                createdByUserId: actorId,
                 stream,
             } as never,
             { store: 'mongostore' as never, stream },
@@ -143,6 +144,7 @@ export const renameCategoryAction = withActorContext(
     async (tenantId: string, categoryId: string, formData: FormData) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin']);
 
         const name = String(formData.get('name') ?? '').trim();
@@ -151,7 +153,7 @@ export const renameCategoryAction = withActorContext(
         const stream = categoryStream(categoryId);
         await aggregates.category.execute(
             'renameCategory',
-            { name, renamedByUserId: userId, stream } as never,
+            { name, renamedByUserId: actorId, stream } as never,
             { store: 'mongostore' as never, stream },
         );
 
@@ -171,6 +173,7 @@ export const reparentCategoryAction = withActorContext(
     async (tenantId: string, categoryId: string, formData: FormData) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin']);
 
         const parentRaw = String(formData.get('parentId') ?? '').trim();
@@ -193,7 +196,7 @@ export const reparentCategoryAction = withActorContext(
         const stream = categoryStream(categoryId);
         await aggregates.category.execute(
             'reparentCategory',
-            { parentId, reparentedByUserId: userId, stream } as never,
+            { parentId, reparentedByUserId: actorId, stream } as never,
             { store: 'mongostore' as never, stream },
         );
 
@@ -213,12 +216,13 @@ export const archiveCategoryAction = withActorContext(
     async (tenantId: string, categoryId: string) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin']);
 
         const stream = categoryStream(categoryId);
         await aggregates.category.execute(
             'archiveCategory',
-            { archivedByUserId: userId, stream } as never,
+            { archivedByUserId: actorId, stream } as never,
             { store: 'mongostore' as never, stream },
         );
 

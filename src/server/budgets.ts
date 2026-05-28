@@ -12,7 +12,7 @@ import {
 import type { MembershipRole } from '@/domains/tenants';
 import type { SorcUUID } from '@event-sorcerer/core';
 import { withToast } from '@/lib/toast-url';
-import { withActorContext } from '@/lib/actor-context';
+import { withActorContext, effectiveAttributedId } from '@/lib/actor-context';
 import { parseAmountToMinor } from '@/lib/money';
 import { revalidateTenantDashboards } from '@/lib/revalidate-dashboards';
 
@@ -52,6 +52,7 @@ export const createBudgetAction = withActorContext(
     async (tenantId: string, formData: FormData) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin']);
 
         const categoryId = String(formData.get('categoryId') ?? '').trim();
@@ -100,7 +101,7 @@ export const createBudgetAction = withActorContext(
                 monthlyAmount,
                 currency,
                 rolloverPolicy,
-                createdByUserId: userId,
+                createdByUserId: actorId,
                 stream,
             } as never,
             { store: 'mongostore' as never, stream },
@@ -122,6 +123,7 @@ export const updateBudgetAction = withActorContext(
     async (tenantId: string, budgetId: string, formData: FormData) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin']);
 
         const amountRaw = String(formData.get('monthlyAmount') ?? '').trim();
@@ -150,7 +152,7 @@ export const updateBudgetAction = withActorContext(
             {
                 monthlyAmount,
                 rolloverPolicy,
-                updatedByUserId: userId,
+                updatedByUserId: actorId,
                 stream,
             } as never,
             { store: 'mongostore' as never, stream },
@@ -172,12 +174,13 @@ export const archiveBudgetAction = withActorContext(
     async (tenantId: string, budgetId: string) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin']);
 
         const stream = budgetStream(budgetId);
         await aggregates.budget.execute(
             'archiveBudget',
-            { archivedByUserId: userId, stream } as never,
+            { archivedByUserId: actorId, stream } as never,
             { store: 'mongostore' as never, stream },
         );
 

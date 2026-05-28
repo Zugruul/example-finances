@@ -5,127 +5,29 @@ import { revalidatePath } from 'next/cache';
 import { v7 as uuidv7 } from 'uuid';
 import { auth } from '@/auth';
 import { aggregates, readModels } from '@/sorc';
-import { withActorContext } from '@/lib/actor-context';
+import { withActorContext, effectiveAttributedId } from '@/lib/actor-context';
 import { withToast } from '@/lib/toast-url';
 import type { SorcUUID } from '@event-sorcerer/core';
 import type { TransactionStreamInstance } from '@/domains/transactions';
 import type { BudgetStreamInstance } from '@/domains/budgets';
 import type { TemplateStreamInstance } from '@/domains/recurring-templates';
 
-const SEED_VERSION = 'v1';
-
-/**
- * Inventory of things the seed will create. Used by the wizard's
- * Phase 1 (Review) so the admin sees an honest count BEFORE running.
- *
- * Each entry returns plain numbers so the planner can be called from
- * a server component without instantiating aggregates.
- */
-export interface SeedPlan {
-    version: string;
-    items: Array<{ kind: string; count: number; note?: string }>;
-    accounts: SeedAccount[];
-    categories: SeedCategory[];
-    budgets: SeedBudget[];
-    templates: SeedTemplate[];
-    transactionCount: number;
-}
-
-interface SeedAccount {
-    name: string;
-    type: 'checking' | 'savings' | 'credit_card';
-    currency: 'USD';
-    openingBalance: number; // minor units
-}
-interface SeedCategory {
-    name: string;
-    type: 'income' | 'expense';
-}
-interface SeedBudget {
-    categoryName: string;
-    monthlyAmount: number; // minor units
-}
-interface SeedTemplate {
-    description: string;
-    cadence:
-        | { kind: 'monthly'; dayOfMonth: number }
-        | { kind: 'biweekly'; dayOfWeek: number };
-    type: 'income' | 'expense';
-    amount: number; // minor units
-    accountName: string;
-    categoryName: string;
-}
-
-export function buildSeedPlan(): SeedPlan {
-    const accounts: SeedAccount[] = [
-        { name: 'Checking', type: 'checking', currency: 'USD', openingBalance: 250_000 },
-        { name: 'Savings', type: 'savings', currency: 'USD', openingBalance: 500_000 },
-        { name: 'Credit card', type: 'credit_card', currency: 'USD', openingBalance: 0 },
-    ];
-    const categories: SeedCategory[] = [
-        { name: 'Salary', type: 'income' },
-        { name: 'Bonus', type: 'income' },
-        { name: 'Groceries', type: 'expense' },
-        { name: 'Rent', type: 'expense' },
-        { name: 'Utilities', type: 'expense' },
-        { name: 'Dining', type: 'expense' },
-        { name: 'Transport', type: 'expense' },
-        { name: 'Entertainment', type: 'expense' },
-    ];
-    const budgets: SeedBudget[] = [
-        { categoryName: 'Groceries', monthlyAmount: 60_000 },
-        { categoryName: 'Dining', monthlyAmount: 25_000 },
-        { categoryName: 'Entertainment', monthlyAmount: 15_000 },
-    ];
-    const templates: SeedTemplate[] = [
-        {
-            description: 'Salary',
-            cadence: { kind: 'monthly', dayOfMonth: 1 },
-            type: 'income',
-            amount: 500_000,
-            accountName: 'Checking',
-            categoryName: 'Salary',
-        },
-        {
-            description: 'Rent',
-            cadence: { kind: 'monthly', dayOfMonth: 5 },
-            type: 'expense',
-            amount: 150_000,
-            accountName: 'Checking',
-            categoryName: 'Rent',
-        },
-        {
-            description: 'Streaming subscription',
-            cadence: { kind: 'monthly', dayOfMonth: 15 },
-            type: 'expense',
-            amount: 1_500,
-            accountName: 'Credit card',
-            categoryName: 'Entertainment',
-        },
-    ];
-    // ~5 transactions per past month, across 6 months → ~30 transactions.
-    const transactionCount = 30;
-    const items = [
-        { kind: 'Accounts', count: accounts.length },
-        { kind: 'Categories', count: categories.length },
-        { kind: 'Budgets', count: budgets.length },
-        { kind: 'Recurring templates', count: templates.length },
-        {
-            kind: 'Sample transactions',
-            count: transactionCount,
-            note: '~5/month for the last 6 months',
-        },
-    ];
-    return {
-        version: SEED_VERSION,
-        items,
-        accounts,
-        categories,
-        budgets,
-        templates,
-        transactionCount,
-    };
-}
+// Plan + types now live in `admin-seed-plan.ts` so the synchronous
+// `buildSeedPlan` planner can be imported from server components.
+// Next 16's `'use server'` rule prohibits non-async exports from this
+// file, so we re-export types only and import the planner for our own
+// use below.
+import {
+    buildSeedPlan,
+    type SeedPlan,
+} from '@/server/admin-seed-plan';
+export type {
+    SeedPlan,
+    SeedAccount,
+    SeedCategory,
+    SeedBudget,
+    SeedTemplate,
+} from '@/server/admin-seed-plan';
 
 /**
  * Actually run the seed. The wizard's Phase 3 form posts here with
@@ -153,6 +55,7 @@ export const seedTenantAction = withActorContext(
             throw new Error('Forbidden — admin only.');
         }
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         const confirm = String(formData.get('confirm') ?? '');
         if (confirm !== 'seed') {
             throw new Error(
@@ -204,7 +107,7 @@ export const seedTenantAction = withActorContext(
                     type: a.type,
                     currency: a.currency,
                     openingBalance: a.openingBalance,
-                    createdByUserId: userId,
+                    createdByUserId: actorId,
                     stream,
                 } as never,
                 { store: 'mongostore' as never, stream },
@@ -224,7 +127,7 @@ export const seedTenantAction = withActorContext(
                     tenantId: tenantId as SorcUUID,
                     name: c.name,
                     type: c.type,
-                    createdByUserId: userId,
+                    createdByUserId: actorId,
                     stream,
                 } as never,
                 { store: 'mongostore' as never, stream },
@@ -247,7 +150,7 @@ export const seedTenantAction = withActorContext(
                     monthlyAmount: b.monthlyAmount,
                     currency: 'USD',
                     rolloverPolicy: 'none',
-                    createdByUserId: userId,
+                    createdByUserId: actorId,
                     stream,
                 } as never,
                 { store: 'mongostore' as never, stream },
@@ -274,7 +177,7 @@ export const seedTenantAction = withActorContext(
                     transactionType: t.type,
                     cadence: t.cadence,
                     startsOn: monthsAgoYmd(6),
-                    createdByUserId: userId,
+                    createdByUserId: actorId,
                     stream,
                 } as never,
                 { store: 'mongostore' as never, stream },
@@ -323,7 +226,7 @@ export const seedTenantAction = withActorContext(
                     occurredOn,
                     description: `Seeded ${cat.name.toLowerCase()}`,
                     transactionType: isIncome ? 'income' : 'expense',
-                    recordedByUserId: userId,
+                    recordedByUserId: actorId,
                     stream,
                 } as never,
                 { store: 'mongostore' as never, stream },

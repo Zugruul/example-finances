@@ -12,7 +12,7 @@ import type {
 } from '@/domains/tenants';
 import type { SorcUUID } from '@event-sorcerer/core';
 import { withToast } from '@/lib/toast-url';
-import { withActorContext } from '@/lib/actor-context';
+import { withActorContext, effectiveAttributedId } from '@/lib/actor-context';
 import { revalidateTenantDashboards } from '@/lib/revalidate-dashboards';
 
 // ----- helpers -----
@@ -53,6 +53,7 @@ export const createTenantAction = withActorContext(
     async (formData: FormData) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         const displayName = String(formData.get('displayName') ?? '').trim();
         const description =
             String(formData.get('description') ?? '').trim() || undefined;
@@ -72,7 +73,7 @@ export const createTenantAction = withActorContext(
                 tenantId,
                 displayName,
                 description,
-                createdByUserId: userId,
+                createdByUserId: actorId,
                 stream: tStream,
             } as never,
             { store: 'mongostore' as never, stream: tStream },
@@ -86,7 +87,7 @@ export const createTenantAction = withActorContext(
                 membershipId,
                 invitedEmail: session.user!.email ?? '',
                 role: 'owner',
-                invitedByUserId: userId,
+                invitedByUserId: actorId,
                 stream: mStream,
             } as never,
             { store: 'mongostore' as never, stream: mStream },
@@ -122,6 +123,7 @@ export const renameTenantAction = withActorContext(
     async (tenantId: string, formData: FormData) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin']);
 
         const displayName = String(formData.get('displayName') ?? '').trim();
@@ -132,7 +134,7 @@ export const renameTenantAction = withActorContext(
             'renameTenant',
             {
                 displayName,
-                renamedByUserId: userId,
+                renamedByUserId: actorId,
                 stream: tStream,
             } as never,
             { store: 'mongostore' as never, stream: tStream },
@@ -153,6 +155,7 @@ export const inviteMemberAction = withActorContext(
     async (tenantId: string, formData: FormData) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin']);
 
         const invitedEmail = String(formData.get('email') ?? '')
@@ -170,7 +173,7 @@ export const inviteMemberAction = withActorContext(
                 membershipId,
                 invitedEmail,
                 role,
-                invitedByUserId: userId,
+                invitedByUserId: actorId,
                 stream: mStream,
             } as never,
             { store: 'mongostore' as never, stream: mStream },
@@ -208,6 +211,7 @@ export const changeMemberRoleAction = withActorContext(
     async (tenantId: string, membershipId: string, role: MembershipRole) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin']);
 
         const mStream = membershipStream(tenantId, membershipId);
@@ -215,7 +219,7 @@ export const changeMemberRoleAction = withActorContext(
             'changeRole',
             {
                 role,
-                changedByUserId: userId,
+                changedByUserId: actorId,
                 stream: mStream,
             } as never,
             { store: 'mongostore' as never, stream: mStream },
@@ -236,13 +240,14 @@ export const removeMemberAction = withActorContext(
     async (tenantId: string, membershipId: string) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin']);
 
         const mStream = membershipStream(tenantId, membershipId);
         await aggregates.membership.execute(
             'removeMember',
             {
-                removedByUserId: userId,
+                removedByUserId: actorId,
                 stream: mStream,
             } as never,
             { store: 'mongostore' as never, stream: mStream },

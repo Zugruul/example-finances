@@ -132,18 +132,17 @@ export const authConfig: NextAuthConfig = {
                                     const stream = adminActionsStream(adminId);
                                     // Stamp the synthetic Ended event
                                     // with the same dual-actor metadata
-                                    // a manual end would have carried:
-                                    // actor = impersonated target,
-                                    // onBehalfOf = the real admin. Mirrors
-                                    // the wrapping that withActorContext
-                                    // applies to server actions, just
-                                    // here we bind the ALS directly since
-                                    // this runs in the session callback,
-                                    // not a server-action handler.
+                                    // a manual end would have carried.
+                                    // Per the impersonation attribution
+                                    // rule: `actor` is the REAL admin
+                                    // (they're the one whose session is
+                                    // ending the impersonation), and
+                                    // `onBehalfOf` is the target whose
+                                    // session was being driven.
                                     await requestContext.run(
                                         {
-                                            actor: expired.targetUserId,
-                                            onBehalfOf: expired.actorAdminId,
+                                            actor: expired.actorAdminId,
+                                            onBehalfOf: expired.targetUserId,
                                         },
                                         async () => {
                                             await aggregates.adminActions.execute(

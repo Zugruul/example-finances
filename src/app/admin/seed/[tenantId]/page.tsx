@@ -2,7 +2,8 @@ import { notFound, redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { readModels } from '@/sorc';
 import { BreadcrumbBar } from '@/components/breadcrumb-bar';
-import { buildSeedPlan, seedTenantAction } from '@/server/admin-seed';
+import { seedTenantAction } from '@/server/admin-seed';
+import { buildSeedPlan } from '@/server/admin-seed-plan';
 import { SeedWizard } from './seed-wizard';
 
 /**

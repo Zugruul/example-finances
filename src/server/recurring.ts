@@ -20,7 +20,7 @@ import {
 import type { MembershipRole } from '@/domains/tenants';
 import type { SorcUUID } from '@event-sorcerer/core';
 import { withToast } from '@/lib/toast-url';
-import { withActorContext } from '@/lib/actor-context';
+import { withActorContext, effectiveAttributedId } from '@/lib/actor-context';
 import { parseAmountToMinor } from '@/lib/money';
 import { revalidateTenantDashboards } from '@/lib/revalidate-dashboards';
 
@@ -110,6 +110,7 @@ export const createTemplateAction = withActorContext(
     async (tenantId: string, formData: FormData) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin']);
 
         const accountId = String(formData.get('accountId') ?? '').trim();
@@ -163,7 +164,7 @@ export const createTemplateAction = withActorContext(
                 cadence,
                 startsOn,
                 endsOn,
-                createdByUserId: userId,
+                createdByUserId: actorId,
                 stream,
             } as never,
             { store: 'mongostore' as never, stream },
@@ -203,6 +204,7 @@ export const updateTemplateAction = withActorContext(
     async (tenantId: string, templateId: string, formData: FormData) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin', 'member']);
 
         const [t] = await readModels.recurringTemplates.find({
@@ -269,7 +271,7 @@ export const updateTemplateAction = withActorContext(
                 amount,
                 description,
                 cadence: cadenceChanged ? cadence : undefined,
-                updatedByUserId: userId,
+                updatedByUserId: actorId,
                 stream,
             } as never,
             { store: 'mongostore' as never, stream },
@@ -292,11 +294,12 @@ export const archiveTemplateAction = withActorContext(
     async (tenantId: string, templateId: string) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin']);
         const stream = templateStream(templateId);
         await aggregates.recurringTemplate.execute(
             'archiveTemplate',
-            { archivedByUserId: userId, stream } as never,
+            { archivedByUserId: actorId, stream } as never,
             { store: 'mongostore' as never, stream },
         );
         revalidatePath(`/tenants/${tenantId}/recurring`);
@@ -328,6 +331,7 @@ export const materializeDueTemplatesAction = withActorContext(
     async (tenantId: string) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         // Any tenant member can trigger materialization.
         await requireRole(tenantId, userId, ['owner', 'admin', 'member']);
 
@@ -369,7 +373,7 @@ export const materializeDueTemplatesAction = withActorContext(
                             description: t.description,
                             transactionType: t.transactionType,
                             templateId: t.templateId,
-                            recordedByUserId: userId,
+                            recordedByUserId: actorId,
                             stream: txStream,
                         } as never,
                         { store: 'mongostore' as never, stream: txStream },
@@ -425,6 +429,7 @@ export const applyTemplateAction = withActorContext(
     async (tenantId: string, formData: FormData) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin', 'member']);
 
         const templateId = String(formData.get('templateId') ?? '').trim();
@@ -532,7 +537,7 @@ export const applyTemplateAction = withActorContext(
                 description,
                 transactionType: transactionType as 'income' | 'expense',
                 templateId: t.templateId,
-                recordedByUserId: userId,
+                recordedByUserId: actorId,
                 recordedAt: new Date(),
             } as InstanceType<typeof TransactionRecordedEvent>['payload'],
         } as never);

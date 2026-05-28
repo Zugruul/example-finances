@@ -12,7 +12,7 @@ import {
 import type { MembershipRole } from '@/domains/tenants';
 import type { SorcUUID } from '@event-sorcerer/core';
 import { withToast } from '@/lib/toast-url';
-import { withActorContext } from '@/lib/actor-context';
+import { withActorContext, effectiveAttributedId } from '@/lib/actor-context';
 import { parseAmountToMinor } from '@/lib/money';
 import { revalidateTenantDashboards } from '@/lib/revalidate-dashboards';
 
@@ -69,6 +69,7 @@ export const createAccountAction = withActorContext(
     async (tenantId: string, formData: FormData) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin']);
 
         const name = String(formData.get('name') ?? '').trim();
@@ -96,7 +97,7 @@ export const createAccountAction = withActorContext(
                 accountType,
                 currency,
                 openingBalance,
-                createdByUserId: userId,
+                createdByUserId: actorId,
                 stream,
             } as never,
             { store: 'mongostore' as never, stream },
@@ -118,6 +119,7 @@ export const renameAccountAction = withActorContext(
     async (tenantId: string, accountId: string, formData: FormData) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin']);
 
         const name = String(formData.get('name') ?? '').trim();
@@ -128,7 +130,7 @@ export const renameAccountAction = withActorContext(
             'renameAccount',
             {
                 name,
-                renamedByUserId: userId,
+                renamedByUserId: actorId,
                 stream,
             } as never,
             { store: 'mongostore' as never, stream },
@@ -150,13 +152,14 @@ export const archiveAccountAction = withActorContext(
     async (tenantId: string, accountId: string) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin']);
 
         const stream = accountStream(accountId);
         await aggregates.account.execute(
             'archiveAccount',
             {
-                archivedByUserId: userId,
+                archivedByUserId: actorId,
                 stream,
             } as never,
             { store: 'mongostore' as never, stream },
@@ -178,13 +181,14 @@ export const closeAccountAction = withActorContext(
     async (tenantId: string, accountId: string) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin']);
 
         const stream = accountStream(accountId);
         await aggregates.account.execute(
             'closeAccount',
             {
-                closedByUserId: userId,
+                closedByUserId: actorId,
                 stream,
             } as never,
             { store: 'mongostore' as never, stream },

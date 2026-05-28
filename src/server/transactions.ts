@@ -13,7 +13,7 @@ import {
 import type { MembershipRole } from '@/domains/tenants';
 import type { SorcUUID } from '@event-sorcerer/core';
 import { withToast } from '@/lib/toast-url';
-import { withActorContext } from '@/lib/actor-context';
+import { withActorContext, effectiveAttributedId } from '@/lib/actor-context';
 import { parseAmountToMinor } from '@/lib/money';
 import { revalidateTenantDashboards } from '@/lib/revalidate-dashboards';
 
@@ -72,6 +72,7 @@ export const recordTransactionAction = withActorContext(
     async (tenantId: string, formData: FormData) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         // `member` and above can record transactions (operate within
         // existing structure). `viewer` is read-only.
         await requireRole(tenantId, userId, ['owner', 'admin', 'member']);
@@ -126,7 +127,7 @@ export const recordTransactionAction = withActorContext(
                 occurredOn,
                 description,
                 transactionType,
-                recordedByUserId: userId,
+                recordedByUserId: actorId,
                 stream,
             } as never,
             { store: 'mongostore' as never, stream },
@@ -153,6 +154,7 @@ export const updateTransactionAction = withActorContext(
     ) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin', 'member']);
 
         const [tx] = await readModels.transactions.find({
@@ -188,7 +190,7 @@ export const updateTransactionAction = withActorContext(
                 amount,
                 occurredOn,
                 description,
-                updatedByUserId: userId,
+                updatedByUserId: actorId,
                 stream,
             } as never,
             { store: 'mongostore' as never, stream },
@@ -212,6 +214,7 @@ export const recordTransferAction = withActorContext(
     async (tenantId: string, formData: FormData) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin', 'member']);
 
         const fromAccountId = String(
@@ -286,7 +289,7 @@ export const recordTransferAction = withActorContext(
                 transactionType: 'transfer' as const,
                 counterpartTransactionId: creditId,
                 transferDirection: 'debit' as const,
-                recordedByUserId: userId,
+                recordedByUserId: actorId,
                 recordedAt: new Date(),
             } as InstanceType<typeof TransactionRecordedEvent>['payload'],
         } as never);
@@ -305,7 +308,7 @@ export const recordTransferAction = withActorContext(
                 transactionType: 'transfer' as const,
                 counterpartTransactionId: debitId,
                 transferDirection: 'credit' as const,
-                recordedByUserId: userId,
+                recordedByUserId: actorId,
                 recordedAt: new Date(),
             } as InstanceType<typeof TransactionRecordedEvent>['payload'],
         } as never);
@@ -345,6 +348,7 @@ export const deleteTransactionAction = withActorContext(
     async (tenantId: string, transactionId: string) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin', 'member']);
 
         const [tx] = await readModels.transactions.find({
@@ -357,7 +361,7 @@ export const deleteTransactionAction = withActorContext(
         const stream = transactionStream(transactionId);
         await aggregates.transaction.execute(
             'deleteTransaction',
-            { deletedByUserId: userId, stream } as never,
+            { deletedByUserId: actorId, stream } as never,
             { store: 'mongostore' as never, stream },
         );
 
@@ -420,6 +424,7 @@ export const revertTransactionsAction = withActorContext(
     async (tenantId: string, formData: FormData) => {
         const session = await requireSession();
         const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
         await requireRole(tenantId, userId, ['owner', 'admin', 'member']);
 
         const idsRaw = String(formData.get('ids') ?? '').trim();
@@ -505,7 +510,7 @@ export const revertTransactionsAction = withActorContext(
                         revertsTransactionIds: sub.map(
                             (t) => t.transactionId,
                         ),
-                        recordedByUserId: userId,
+                        recordedByUserId: actorId,
                         stream: newStream,
                     } as never,
                     { store: 'mongostore' as never, stream: newStream },
