@@ -558,23 +558,66 @@ export default async function DashboardPage({
             byCategory: new Map(),
         });
     }
+    // Per-account 30-day net change. Same pass over transactions so
+    // we don't fetch twice. accountDayNet: Map<accountId, Map<ymd, net>>
+    const accountTrendDays = 30;
+    const accountTrendStart = new Date(todayForHeatmap);
+    accountTrendStart.setUTCDate(
+        accountTrendStart.getUTCDate() - (accountTrendDays - 1),
+    );
+    const accountTrendYmds: string[] = [];
+    const accountTrendRange = new Set<string>();
+    for (let i = 0; i < accountTrendDays; i++) {
+        const d = new Date(accountTrendStart);
+        d.setUTCDate(accountTrendStart.getUTCDate() + i);
+        const ymd = d.toISOString().slice(0, 10);
+        accountTrendYmds.push(ymd);
+        accountTrendRange.add(ymd);
+    }
+    const accountDayNet = new Map<string, Map<string, number>>();
+
     // Cross-tenant: pull transactions from every scoped tenant and
-    // accumulate into the same per-day buckets.
+    // accumulate into the same per-day buckets — heatmap + per-account.
     for (const tid of scopedTenantIds) {
         const txs = await readModels.transactions.find({ tenantId: tid });
         for (const t of txs) {
             if (t.isDeleted) continue;
-            if (t.transactionType !== 'expense') continue;
-            const bucket = heatmapMap.get(t.occurredOn);
-            if (!bucket) continue;
-            bucket.total += t.amount;
-            const catName = t.categoryId
-                ? (categoryById.get(String(t.categoryId))?.name ?? 'Unknown')
-                : 'Uncategorized';
-            bucket.byCategory.set(
-                catName,
-                (bucket.byCategory.get(catName) ?? 0) + t.amount,
-            );
+            // Heatmap: only expense rows.
+            if (t.transactionType === 'expense') {
+                const bucket = heatmapMap.get(t.occurredOn);
+                if (bucket) {
+                    bucket.total += t.amount;
+                    const catName = t.categoryId
+                        ? (categoryById.get(String(t.categoryId))?.name ??
+                              'Unknown')
+                        : 'Uncategorized';
+                    bucket.byCategory.set(
+                        catName,
+                        (bucket.byCategory.get(catName) ?? 0) + t.amount,
+                    );
+                }
+            }
+            // Account trend: any in-window txn signed by type/direction.
+            if (accountTrendRange.has(t.occurredOn)) {
+                const sign =
+                    t.transactionType === 'income'
+                        ? 1
+                        : t.transactionType === 'expense'
+                          ? -1
+                          : t.transferDirection === 'credit'
+                            ? 1
+                            : -1;
+                const accId = String(t.accountId);
+                let perDay = accountDayNet.get(accId);
+                if (!perDay) {
+                    perDay = new Map();
+                    accountDayNet.set(accId, perDay);
+                }
+                perDay.set(
+                    t.occurredOn,
+                    (perDay.get(t.occurredOn) ?? 0) + sign * t.amount,
+                );
+            }
         }
     }
     const heatmapData = Array.from(heatmapMap.entries())
@@ -586,6 +629,56 @@ export default async function DashboardPage({
                 .map(([name, amount]) => ({ name, amount }))
                 .sort((a, b) => b.amount - a.amount),
         }));
+
+    // Resolve account names from the `accountsByTenant` read model
+    // (accountBalance doesn't carry name) and build the 30-day balance
+    // trend for each. Walking back from today's balance keeps the
+    // arithmetic anchored on the live read-model value rather than
+    // accumulating drift from event-log replay.
+    const accountsByTenantDocs = (
+        await Promise.all(
+            scopedTenantIds.map((tid) =>
+                readModels.accountsByTenant.find({ tenantId: tid }),
+            ),
+        )
+    ).flat();
+    const accountInfoById = new Map(
+        accountsByTenantDocs.map((a) => [
+            String(a.accountId),
+            { name: a.name, isClosed: a.isClosed },
+        ]),
+    );
+    type AccountTrend = {
+        accountId: string;
+        name: string;
+        currency: string;
+        balance: number;
+        trend: Array<{ x: string; y: number }>;
+    };
+    const accountTrends: AccountTrend[] = accountBalances
+        .filter((b) => !accountInfoById.get(String(b.accountId))?.isClosed)
+        .map((b) => {
+            const accId = String(b.accountId);
+            const perDay = accountDayNet.get(accId) ?? new Map<string, number>();
+            // Walk newest → oldest, recording each day's CLOSING balance,
+            // then subtracting that day's net to step back. Reverse to
+            // get oldest-first for the sparkline.
+            let running = b.balance;
+            const reverse: Array<{ x: string; y: number }> = [];
+            for (let i = accountTrendDays - 1; i >= 0; i--) {
+                const ymd = accountTrendYmds[i]!;
+                reverse.push({ x: ymd, y: running });
+                running -= perDay.get(ymd) ?? 0;
+            }
+            return {
+                accountId: accId,
+                name: accountInfoById.get(accId)?.name ?? 'Account',
+                currency: b.currency,
+                balance: b.balance,
+                trend: reverse.reverse(),
+            };
+        })
+        .sort((a, b) => b.balance - a.balance);
 
     // Cross-tenant: budgets + recurring are concatenated across every
     // scoped tenant. Single-tenant mode is just a list-of-one tenant
@@ -858,6 +951,52 @@ export default async function DashboardPage({
                             <div className="mt-2 text-xs text-muted-foreground">
                                 {year}-{String(month).padStart(2, '0')}
                             </div>
+                        </CardContent>
+                    </Card>
+                </section>
+            ) : null}
+
+            {currentTenantId && accountTrends.length > 0 ? (
+                <section>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Accounts</CardTitle>
+                            <p className="text-xs text-muted-foreground">
+                                Current balance · last 30 days
+                            </p>
+                        </CardHeader>
+                        <CardContent>
+                            <ul className="grid grid-cols-1 gap-x-6 gap-y-3 md:grid-cols-2 lg:grid-cols-3">
+                                {accountTrends.map((a) => {
+                                    const sign =
+                                        a.balance < 0 ? '−' : '';
+                                    const display = formatMoney(
+                                        Math.abs(a.balance),
+                                        a.currency,
+                                    );
+                                    return (
+                                        <li
+                                            key={a.accountId}
+                                            className="flex items-center gap-3"
+                                        >
+                                            <div className="min-w-0 flex-1">
+                                                <p className="truncate text-sm font-medium">
+                                                    {a.name}
+                                                </p>
+                                                <p className="font-mono tabular-nums text-xs text-muted-foreground">
+                                                    {sign}
+                                                    {display}
+                                                </p>
+                                            </div>
+                                            <div className="w-24 shrink-0">
+                                                <Sparkline
+                                                    data={a.trend}
+                                                />
+                                            </div>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
                         </CardContent>
                     </Card>
                 </section>
