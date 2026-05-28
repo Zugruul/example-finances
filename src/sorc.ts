@@ -239,6 +239,7 @@ function buildSorc(metrics: ReturnType<typeof metricsPrometheus>) {
                 { name: 'TenantCreated', version: '*' },
                 { name: 'TenantRenamed', version: '*' },
                 { name: 'TenantArchived', version: '*' },
+                { name: 'TenantDefaultCurrencyChanged', version: '*' },
             ],
             initial: null as ReturnType<typeof tenantReducer>,
             reducer: tenantReducer as never,

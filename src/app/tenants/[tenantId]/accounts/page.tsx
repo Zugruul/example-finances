@@ -63,7 +63,13 @@ export default async function AccountsListPage(props: {
     const profile = userId
         ? await readModels.usersById.findOne({ userId: userId as SorcUUID })
         : null;
-    const defaultCurrency = profile?.defaultCurrency ?? 'USD';
+    // Currency precedence for the "Create account" form's pre-fill:
+    //   1. Tenant's own defaultCurrency (the per-tenant setting on
+    //      /tenants/[id] Options).
+    //   2. User's default for new tenants (from /settings).
+    //   3. Hardcoded 'USD'.
+    const defaultCurrency =
+        tenant.defaultCurrency ?? profile?.defaultCurrency ?? 'USD';
 
     const create = createAccountAction.bind(null, tenantId);
 

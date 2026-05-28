@@ -64,11 +64,13 @@ export default async function SettingsPage() {
 
             <Card>
                 <CardHeader>
-                    <CardTitle>Default currency</CardTitle>
+                    <CardTitle>Default currency for new tenants</CardTitle>
                     <CardDescription>
-                        Pre-fills the currency field when you create a new
-                        account. Existing accounts keep their original
-                        currency.
+                        Used as the starting currency when you create a new
+                        tenant. Each tenant has its own per-tenant default
+                        currency you can change from that tenant's Options
+                        page — this user-level setting only seeds new
+                        tenants.
                     </CardDescription>
                 </CardHeader>
                 <CardContent>

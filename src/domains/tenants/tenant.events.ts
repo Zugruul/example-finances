@@ -47,6 +47,21 @@ export class TenantRenamedPayload extends SorcPayload {
 }
 
 @domain('tenants')
+export class TenantDefaultCurrencyChangedPayload extends SorcPayload {
+    @property({ type: 'uuid', required: true })
+    tenantId!: SorcUUID;
+
+    @property({ type: 'string', required: true })
+    defaultCurrency!: string;
+
+    @property({ type: 'uuid', required: true })
+    changedByUserId!: SorcUUID;
+
+    @property({ type: 'date', required: true })
+    changedAt!: Date;
+}
+
+@domain('tenants')
 export class TenantArchivedPayload extends SorcPayload {
     @property({ type: 'uuid', required: true })
     tenantId!: SorcUUID;
@@ -105,8 +120,24 @@ export class TenantArchivedEvent extends SorcBaseEvent {
     }
 }
 
+@domain('tenants')
+export class TenantDefaultCurrencyChangedEvent extends SorcBaseEvent {
+    readonly name = 'TenantDefaultCurrencyChanged' as const;
+    readonly version = '2026-05-28' as const;
+    publishedAt: Date | null = null;
+    revision: bigint | null = null;
+
+    constructor(
+        public stream: TenantStreamInstance,
+        public payload: TenantDefaultCurrencyChangedPayload,
+    ) {
+        super();
+    }
+}
+
 export const tenantEvents = [
     TenantCreatedEvent,
     TenantRenamedEvent,
     TenantArchivedEvent,
+    TenantDefaultCurrencyChangedEvent,
 ] as const;

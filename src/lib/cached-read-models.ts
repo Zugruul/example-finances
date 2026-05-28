@@ -56,8 +56,16 @@ export function revalidateReadModelTag(
     readModelName: string,
     tenantId?: string,
 ): void {
-    if (tenantId) revalidateTag(readModelTenantTag(readModelName, tenantId));
-    revalidateTag(readModelTag(readModelName));
+    // Next 16's `revalidateTag` requires a cache-life profile second
+    // arg. `'default'` matches the bundled default profile used by
+    // our `cachedFind` wrapper below.
+    if (tenantId) {
+        revalidateTag(
+            readModelTenantTag(readModelName, tenantId),
+            'default',
+        );
+    }
+    revalidateTag(readModelTag(readModelName), 'default');
 }
 
 /**

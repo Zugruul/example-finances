@@ -3,6 +3,7 @@ import {
     TenantCreatedEvent,
     TenantRenamedEvent,
     TenantArchivedEvent,
+    TenantDefaultCurrencyChangedEvent,
     type TenantStreamInstance,
 } from './tenant.events';
 
@@ -13,12 +14,14 @@ export type TenantState = null | {
     createdByUserId: SorcUUID;
     createdAt: Date;
     archivedAt?: Date;
+    defaultCurrency?: string;
 };
 
 export type TenantEvent = InstanceType<
     | typeof TenantCreatedEvent
     | typeof TenantRenamedEvent
     | typeof TenantArchivedEvent
+    | typeof TenantDefaultCurrencyChangedEvent
 >;
 
 export function tenantReducer(
@@ -41,6 +44,13 @@ export function tenantReducer(
         case 'TenantArchived':
             return state
                 ? { ...state, archivedAt: event.payload.archivedAt }
+                : state;
+        case 'TenantDefaultCurrencyChanged':
+            return state
+                ? {
+                      ...state,
+                      defaultCurrency: event.payload.defaultCurrency,
+                  }
                 : state;
         default:
             return state;
@@ -65,6 +75,12 @@ export type RenameTenantCmd = {
 
 export type ArchiveTenantCmd = {
     archivedByUserId: SorcUUID;
+    stream: TenantStreamInstance;
+};
+
+export type SetTenantDefaultCurrencyCmd = {
+    defaultCurrency: string;
+    changedByUserId: SorcUUID;
     stream: TenantStreamInstance;
 };
 
@@ -127,6 +143,31 @@ export const tenantCommands = {
                 archivedByUserId: cmd.archivedByUserId,
                 archivedAt: new Date(),
             } as InstanceType<typeof TenantArchivedEvent>['payload'],
+            { stream: cmd.stream },
+        );
+    },
+
+    setTenantDefaultCurrency(
+        state: TenantState,
+        cmd: SetTenantDefaultCurrencyCmd,
+        ctx?: CommandContext,
+    ): void {
+        if (!state) throw new Error('Tenant does not exist');
+        if (state.archivedAt) throw new Error('Tenant is archived');
+        if (!/^[A-Z]{3}$/.test(cmd.defaultCurrency)) {
+            throw new Error(
+                'Default currency must be a 3-letter ISO-4217 code.',
+            );
+        }
+        if (state.defaultCurrency === cmd.defaultCurrency) return;
+        ctx!.emit(
+            TenantDefaultCurrencyChangedEvent,
+            {
+                tenantId: state.tenantId,
+                defaultCurrency: cmd.defaultCurrency,
+                changedByUserId: cmd.changedByUserId,
+                changedAt: new Date(),
+            } as InstanceType<typeof TenantDefaultCurrencyChangedEvent>['payload'],
             { stream: cmd.stream },
         );
     },

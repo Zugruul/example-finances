@@ -5,6 +5,7 @@ import { readModels } from '@/sorc';
 import {
     inviteMemberAction,
     renameTenantAction,
+    updateTenantDefaultCurrencyAction,
 } from '@/server/tenants';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/submit-button';
@@ -45,6 +46,21 @@ export default async function TenantDetailPage(props: {
 
     const rename = renameTenantAction.bind(null, tenantId);
     const invite = inviteMemberAction.bind(null, tenantId);
+    const setCurrency = updateTenantDefaultCurrencyAction.bind(null, tenantId);
+
+    const CURRENCY_OPTIONS = [
+        'USD',
+        'EUR',
+        'GBP',
+        'JPY',
+        'BRL',
+        'CAD',
+        'AUD',
+        'INR',
+        'CNY',
+        'CHF',
+    ];
+    const currentCurrency = tenant.defaultCurrency ?? 'USD';
 
     return (
         <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 p-8">
@@ -84,6 +100,44 @@ export default async function TenantDetailPage(props: {
                                 maxLength={120}
                             />
                             <SubmitButton pendingLabel="Saving…">Save</SubmitButton>
+                        </form>
+                    </CardContent>
+                </Card>
+            ) : null}
+
+            {canManage ? (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Default currency</CardTitle>
+                        <p className="text-sm text-muted-foreground">
+                            Pre-fills the currency when you create a new
+                            account in this tenant. Existing accounts keep
+                            their original currency.
+                        </p>
+                    </CardHeader>
+                    <CardContent>
+                        <form
+                            action={setCurrency}
+                            className="flex flex-col gap-3 sm:flex-row sm:items-end"
+                        >
+                            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                                <Label htmlFor="currency">Currency</Label>
+                                <select
+                                    id="currency"
+                                    name="currency"
+                                    defaultValue={currentCurrency}
+                                    className="h-9 rounded-md border bg-background px-3 text-sm"
+                                >
+                                    {CURRENCY_OPTIONS.map((code) => (
+                                        <option key={code} value={code}>
+                                            {code}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <SubmitButton pendingLabel="Saving…">
+                                Save
+                            </SubmitButton>
                         </form>
                     </CardContent>
                 </Card>
