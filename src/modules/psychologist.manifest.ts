@@ -26,9 +26,7 @@ export const psychologistModule: ModuleManifest = {
     version: '1.0.0',
     name: 'Psychologist',
     description:
-        'Manage clients with HIPAA-grade encryption. Phase 1 covers ' +
-        'the client roster; sessions, notes, reminders, and ' +
-        'telehealth are on the way.',
+        'Manage clients with HIPAA-grade encryption.',
     icon: HeartPulseIcon,
     builtin: false,
     pages: [
