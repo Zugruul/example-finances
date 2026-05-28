@@ -25,6 +25,7 @@ import {
     SpendingHeatmap,
 } from './charts';
 import { TenantFilter, type TenantFilterOption } from './tenant-filter';
+import { PiggyBankIcon } from 'lucide-react';
 
 const TENANT_GRID_LIMIT = 6;
 const RECENT_ACTIVITY_LIMIT = 10;
@@ -172,6 +173,24 @@ export default async function DashboardPage({
         String(tenant.tenantId),
     );
     const myTenantIdSet = new Set(myTenantIds);
+
+    // ----- Generic dashboard data (cross-module) -----
+    // Module install state per tenant — used by the "Workspaces" card
+    // below to show what each tenant has installed, and gating the
+    // module-grouped widget sections.
+    const modulesByTenant = new Map<string, string[]>();
+    let modulesInstalledTotal = 0;
+    for (const tid of myTenantIds) {
+        const docs = await readModels.tenantModules.find({ tenantId: tid });
+        const active = docs
+            .filter((d) => d.status === 'installed')
+            .map((d) => d.moduleId);
+        modulesByTenant.set(tid, active);
+        modulesInstalledTotal += active.length;
+    }
+    const anyFinancesInstalled = Array.from(modulesByTenant.values()).some(
+        (mods) => mods.includes('finances'),
+    );
 
     // Fire-and-forget materialize for each tenant the user belongs to.
     // Errors are swallowed inside the helper.
@@ -900,7 +919,132 @@ export default async function DashboardPage({
                 </div>
             ) : null}
 
+            {/* ---------- Generic widgets (cross-module) ---------- */}
             {activeTenants.length > 0 ? (
+                <section className="flex flex-col gap-4">
+                    <div className="flex items-center gap-2">
+                        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Overview
+                        </h2>
+                        <div className="h-px flex-1 bg-border" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="text-sm font-medium text-muted-foreground">
+                                    Workspaces
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="text-3xl font-semibold">
+                                {activeTenants.length}
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="text-sm font-medium text-muted-foreground">
+                                    Modules installed
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="text-3xl font-semibold">
+                                {modulesInstalledTotal}
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="text-sm font-medium text-muted-foreground">
+                                    Pending invitations
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="text-3xl font-semibold">
+                                {pendingInvitations.length}
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="text-sm font-medium text-muted-foreground">
+                                    Member since
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="text-base font-medium">
+                                {tenureLabel === '—'
+                                    ? '—'
+                                    : `${tenureLabel} ago`}
+                            </CardContent>
+                        </Card>
+                    </div>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="text-sm font-medium text-muted-foreground">
+                                Workspaces summary
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <ul className="flex flex-col gap-2">
+                                {activeTenants.map(({ tenant }) => {
+                                    const tid = String(tenant.tenantId);
+                                    const mods =
+                                        modulesByTenant.get(tid) ?? [];
+                                    return (
+                                        <li
+                                            key={tid}
+                                            className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3"
+                                        >
+                                            <div className="flex flex-col">
+                                                <Link
+                                                    href={`/tenants/${tid}/dashboard`}
+                                                    className="font-medium hover:underline"
+                                                >
+                                                    {tenant.displayName}
+                                                </Link>
+                                                <span className="text-xs text-muted-foreground">
+                                                    {tenant.defaultCurrency ??
+                                                        'USD'}
+                                                </span>
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                {mods.length === 0 ? (
+                                                    <span className="text-xs text-muted-foreground">
+                                                        No modules
+                                                    </span>
+                                                ) : (
+                                                    mods.map((m) => (
+                                                        <Badge
+                                                            key={m}
+                                                            variant="outline"
+                                                            className="text-[10px]"
+                                                        >
+                                                            {m}
+                                                        </Badge>
+                                                    ))
+                                                )}
+                                                <Link
+                                                    href="/modules"
+                                                    className="text-xs text-sky-600 hover:underline dark:text-sky-400"
+                                                >
+                                                    Manage →
+                                                </Link>
+                                            </div>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        </CardContent>
+                    </Card>
+                </section>
+            ) : null}
+
+            {/* ---------- Finances module widgets ---------- */}
+            {activeTenants.length > 0 && anyFinancesInstalled ? (
+                <div className="flex items-center gap-2">
+                    <PiggyBankIcon className="size-4 text-muted-foreground" />
+                    <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Finances
+                    </h2>
+                    <div className="h-px flex-1 bg-border" />
+                </div>
+            ) : null}
+
+            {activeTenants.length > 0 && anyFinancesInstalled ? (
                 <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <Card>
                         <CardHeader>
