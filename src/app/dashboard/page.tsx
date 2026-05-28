@@ -383,8 +383,12 @@ export default async function DashboardPage({
     }
 
     // ----- Daily spending heatmap (last 84 days = 12 weeks) -----
+    // Per-day totals AND a per-(day, category) breakdown so the hover
+    // tooltip can list categories with their share. Uncategorized rows
+    // surface under "Uncategorized" so the tooltip never says "Unknown".
     const heatmapDays = 84;
-    const heatmapMap = new Map<string, number>();
+    type DayBuckets = { total: number; byCategory: Map<string, number> };
+    const heatmapMap = new Map<string, DayBuckets>();
     {
         const start = new Date();
         start.setUTCHours(0, 0, 0, 0);
@@ -392,7 +396,10 @@ export default async function DashboardPage({
         for (let i = 0; i < heatmapDays; i++) {
             const d = new Date(start);
             d.setUTCDate(start.getUTCDate() + i);
-            heatmapMap.set(d.toISOString().slice(0, 10), 0);
+            heatmapMap.set(d.toISOString().slice(0, 10), {
+                total: 0,
+                byCategory: new Map(),
+            });
         }
     }
     if (currentTenantId) {
@@ -402,16 +409,27 @@ export default async function DashboardPage({
         for (const t of txs) {
             if (t.isDeleted) continue;
             if (t.transactionType !== 'expense') continue;
-            if (!heatmapMap.has(t.occurredOn)) continue;
-            heatmapMap.set(
-                t.occurredOn,
-                (heatmapMap.get(t.occurredOn) ?? 0) + t.amount,
+            const bucket = heatmapMap.get(t.occurredOn);
+            if (!bucket) continue;
+            bucket.total += t.amount;
+            const catName = t.categoryId
+                ? (categoryById.get(String(t.categoryId))?.name ?? 'Unknown')
+                : 'Uncategorized';
+            bucket.byCategory.set(
+                catName,
+                (bucket.byCategory.get(catName) ?? 0) + t.amount,
             );
         }
     }
     const heatmapData = Array.from(heatmapMap.entries())
         .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-        .map(([ymd, expense]) => ({ ymd, expense }));
+        .map(([ymd, { total, byCategory }]) => ({
+            ymd,
+            expense: total,
+            byCategory: Array.from(byCategory.entries())
+                .map(([name, amount]) => ({ name, amount }))
+                .sort((a, b) => b.amount - a.amount),
+        }));
 
     const budgets = currentTenantId
         ? (
@@ -685,6 +703,143 @@ export default async function DashboardPage({
 
             {currentTenantId ? (
                 <>
+                    <section>
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Daily spending</CardTitle>
+                                <p className="text-xs text-muted-foreground">
+                                    Last 12 weeks
+                                </p>
+                            </CardHeader>
+                            <CardContent>
+                                <SpendingHeatmap
+                                    days={heatmapData}
+                                    currency={monthlyCurrency}
+                                />
+                            </CardContent>
+                        </Card>
+                    </section>
+                    {/* This-month detail — pair Top spending with the
+                        Budget progress bars. Both answer "where is the
+                        money going right now?". */}
+                    {topSpending.length > 0 || budgets.length > 0 ? (
+                        <section className="grid gap-4 md:grid-cols-2">
+                            {topSpending.length > 0 ? (
+                                <Card>
+                                    <CardHeader>
+                                        <CardTitle>
+                                            Top spending categories
+                                        </CardTitle>
+                                        <p className="text-xs text-muted-foreground">
+                                            This month
+                                        </p>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <ul className="flex flex-col gap-1.5 text-sm">
+                                            {topSpending.map((row) => (
+                                                <li
+                                                    key={row.categoryId}
+                                                    className="flex items-center justify-between"
+                                                >
+                                                    <span>{row.name}</span>
+                                                    <span className="font-mono tabular-nums">
+                                                        {formatMoney(
+                                                            row.expense,
+                                                            monthlyCurrency,
+                                                        )}
+                                                    </span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </CardContent>
+                                </Card>
+                            ) : null}
+                            {budgets.length > 0 ? (
+                                <Card>
+                                    <CardHeader>
+                                        <CardTitle className="flex items-baseline justify-between gap-2">
+                                            <span>Budgets</span>
+                                            <Link
+                                                href={`/tenants/${currentTenantId}/budgets`}
+                                                className="text-xs font-normal text-muted-foreground hover:underline"
+                                            >
+                                                All
+                                            </Link>
+                                        </CardTitle>
+                                        <p className="text-xs text-muted-foreground">
+                                            This month
+                                        </p>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <ul className="flex flex-col gap-2 text-sm">
+                                            {budgets.slice(0, 5).map((b) => {
+                                                const cat = categoryById.get(
+                                                    String(b.categoryId),
+                                                );
+                                                const effective =
+                                                    b.monthlyAmount +
+                                                    b.currentMonth
+                                                        .rolloverBalance;
+                                                const pct =
+                                                    effective === 0
+                                                        ? 0
+                                                        : Math.min(
+                                                              100,
+                                                              (b.currentMonth
+                                                                  .spent /
+                                                                  effective) *
+                                                                  100,
+                                                          );
+                                                const over =
+                                                    b.currentMonth.spent >
+                                                    effective;
+                                                return (
+                                                    <li
+                                                        key={String(
+                                                            b.budgetId,
+                                                        )}
+                                                        className="flex flex-col gap-1"
+                                                    >
+                                                        <div className="flex items-center justify-between">
+                                                            <span>
+                                                                {cat?.name ??
+                                                                    'Unknown'}
+                                                            </span>
+                                                            <span className="font-mono tabular-nums">
+                                                                {formatMoney(
+                                                                    b
+                                                                        .currentMonth
+                                                                        .spent,
+                                                                    b.currency,
+                                                                )}{' '}
+                                                                /{' '}
+                                                                {formatMoney(
+                                                                    effective,
+                                                                    b.currency,
+                                                                )}
+                                                            </span>
+                                                        </div>
+                                                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                                                            <div
+                                                                className={
+                                                                    over
+                                                                        ? 'h-1.5 bg-destructive'
+                                                                        : 'h-1.5 bg-primary'
+                                                                }
+                                                                style={{
+                                                                    width: `${pct}%`,
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+                                    </CardContent>
+                                </Card>
+                            ) : null}
+                        </section>
+                    ) : null}
                     <section className="grid gap-4 md:grid-cols-2">
                         <Card>
                             <CardHeader>
@@ -715,7 +870,7 @@ export default async function DashboardPage({
                             </CardContent>
                         </Card>
                     </section>
-                    <section className="grid gap-4 md:grid-cols-2">
+                    <section>
                         <Card>
                             <CardHeader>
                                 <CardTitle>Net worth</CardTitle>
@@ -726,20 +881,6 @@ export default async function DashboardPage({
                             <CardContent>
                                 <NetWorthLine
                                     data={netWorthSeries}
-                                    currency={monthlyCurrency}
-                                />
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Daily spending</CardTitle>
-                                <p className="text-xs text-muted-foreground">
-                                    Last 12 weeks
-                                </p>
-                            </CardHeader>
-                            <CardContent>
-                                <SpendingHeatmap
-                                    days={heatmapData}
                                     currency={monthlyCurrency}
                                 />
                             </CardContent>
@@ -765,102 +906,7 @@ export default async function DashboardPage({
                 </>
             ) : null}
 
-            {currentTenantId && topSpending.length > 0 ? (
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Top spending categories</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <ul className="flex flex-col gap-1.5 text-sm">
-                            {topSpending.map((row) => (
-                                <li
-                                    key={row.categoryId}
-                                    className="flex items-center justify-between"
-                                >
-                                    <span>{row.name}</span>
-                                    <span className="font-mono tabular-nums">
-                                        {formatMoney(
-                                            row.expense,
-                                            monthlyCurrency,
-                                        )}
-                                    </span>
-                                </li>
-                            ))}
-                        </ul>
-                    </CardContent>
-                </Card>
-            ) : null}
-
-            {currentTenantId && budgets.length > 0 ? (
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-baseline justify-between gap-2">
-                            <span>Budgets</span>
-                            <Link
-                                href={`/tenants/${currentTenantId}/budgets`}
-                                className="text-xs font-normal text-muted-foreground hover:underline"
-                            >
-                                All
-                            </Link>
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <ul className="flex flex-col gap-2 text-sm">
-                            {budgets.slice(0, 5).map((b) => {
-                                const cat = categoryById.get(
-                                    String(b.categoryId),
-                                );
-                                const effective =
-                                    b.monthlyAmount +
-                                    b.currentMonth.rolloverBalance;
-                                const pct =
-                                    effective === 0
-                                        ? 0
-                                        : Math.min(
-                                              100,
-                                              (b.currentMonth.spent /
-                                                  effective) *
-                                                  100,
-                                          );
-                                const over = b.currentMonth.spent > effective;
-                                return (
-                                    <li
-                                        key={String(b.budgetId)}
-                                        className="flex flex-col gap-1"
-                                    >
-                                        <div className="flex items-center justify-between">
-                                            <span>
-                                                {cat?.name ?? 'Unknown'}
-                                            </span>
-                                            <span className="font-mono tabular-nums">
-                                                {formatMoney(
-                                                    b.currentMonth.spent,
-                                                    b.currency,
-                                                )}{' '}
-                                                /{' '}
-                                                {formatMoney(
-                                                    effective,
-                                                    b.currency,
-                                                )}
-                                            </span>
-                                        </div>
-                                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                                            <div
-                                                className={
-                                                    over
-                                                        ? 'h-1.5 bg-destructive'
-                                                        : 'h-1.5 bg-primary'
-                                                }
-                                                style={{ width: `${pct}%` }}
-                                            />
-                                        </div>
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    </CardContent>
-                </Card>
-            ) : null}
+{/* topSpending + budgets cards moved up next to the heatmap */}
 
             {currentTenantId && upcomingRecurring.length > 0 ? (
                 <Card>
@@ -902,63 +948,7 @@ export default async function DashboardPage({
                 </Card>
             ) : null}
 
-            {currentTenantId ? (
-                <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    <StatTile
-                        label="Savings rate"
-                        value={
-                            monthIncome > 0
-                                ? `${Math.round(savingsRate * 100)}%`
-                                : '—'
-                        }
-                        hint={
-                            monthIncome > 0
-                                ? monthNet >= 0
-                                    ? `Net +${formatMoney(monthNet, monthlyCurrency)} this month`
-                                    : `Net −${formatMoney(-monthNet, monthlyCurrency)} this month`
-                                : 'No income this month yet'
-                        }
-                    />
-                    <StatTile
-                        label="Subscriptions"
-                        value={formatMoney(
-                            monthlySubscriptionsTotal,
-                            monthlyCurrency,
-                        )}
-                        hint={
-                            recurring.length === 0
-                                ? 'No recurring expense templates yet'
-                                : `${
-                                      recurring.filter(
-                                          (t) =>
-                                              t.transactionType === 'expense',
-                                      ).length
-                                  } active expense templates · monthly-equivalent`
-                        }
-                    />
-                    <StatTile
-                        label="Active tenants"
-                        value={activeTenants.length}
-                    />
-                </section>
-            ) : (
-                <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    <StatTile
-                        label="Active tenants"
-                        value={activeTenants.length}
-                    />
-                    <StatTile
-                        label="Where you manage"
-                        value={ownedOrAdminCount}
-                        hint="Tenants where you’re owner or admin"
-                    />
-                    <StatTile
-                        label="Tenure"
-                        value={tenureLabel}
-                        hint={oldestJoinHint}
-                    />
-                </section>
-            )}
+{/* KPI strip moved up next to the hero net-worth/this-month tiles */}
 
             {pendingInvitations.length > 0 ? (
                 <section className="flex flex-col gap-3">

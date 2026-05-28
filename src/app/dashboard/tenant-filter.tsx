@@ -26,33 +26,25 @@ export function TenantFilter({ options, value }: Props) {
     if (options.length <= 1) return null;
 
     return (
-        <div className="flex items-center gap-2">
-            <label
-                htmlFor="dashboard-tenant"
-                className="text-xs uppercase tracking-wide text-muted-foreground"
-            >
-                Tenant
-            </label>
-            <select
-                id="dashboard-tenant"
-                value={value ?? 'all'}
-                onChange={(e) => {
-                    const v = e.target.value;
-                    const url =
-                        v === 'all'
-                            ? '/dashboard'
-                            : `/dashboard?tenantId=${encodeURIComponent(v)}`;
-                    router.push(url);
-                }}
-                className="h-9 rounded-md border bg-background px-3 text-sm"
-            >
-                <option value="all">All tenants</option>
-                {options.map((o) => (
-                    <option key={o.id} value={o.id}>
-                        {o.displayName}
-                    </option>
-                ))}
-            </select>
-        </div>
+        <select
+            aria-label="Filter by tenant"
+            value={value ?? 'all'}
+            onChange={(e) => {
+                const v = e.target.value;
+                const url =
+                    v === 'all'
+                        ? '/dashboard'
+                        : `/dashboard?tenantId=${encodeURIComponent(v)}`;
+                router.push(url);
+            }}
+            className="h-9 rounded-md border bg-background px-3 text-sm"
+        >
+            <option value="all">All tenants</option>
+            {options.map((o) => (
+                <option key={o.id} value={o.id}>
+                    {o.displayName}
+                </option>
+            ))}
+        </select>
     );
 }

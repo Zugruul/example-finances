@@ -1,5 +1,6 @@
 'use client';
 
+import { useRef, useState } from 'react';
 import {
     Area,
     AreaChart,
@@ -330,17 +331,82 @@ export function Sparkline({
  * (top = Sun). Cell intensity scales with each day's expense relative
  * to the period's max.
  *
+ * Hover any cell to surface a floating card with the date, the day's
+ * total, and a per-category breakdown.
+ *
  * `days` is expected to be a contiguous date range, ordered oldest →
- * newest, with one entry per day (zero-spend days included). The
- * component figures out the calendar geometry on its own.
+ * newest, with one entry per day (zero-spend days included).
  */
 export function SpendingHeatmap({
     days,
     currency,
 }: {
-    days: Array<{ ymd: string; expense: number }>;
+    days: Array<{
+        ymd: string;
+        expense: number;
+        byCategory?: Array<{ name: string; amount: number }>;
+    }>;
     currency: string;
 }) {
+    return (
+        <SpendingHeatmapImpl days={days} currency={currency} />
+    );
+}
+
+interface HeatmapCell {
+    ymd: string;
+    expense: number;
+    byCategory: Array<{ name: string; amount: number }>;
+    col: number;
+    row: number;
+}
+
+function SpendingHeatmapImpl({
+    days,
+    currency,
+}: {
+    days: Array<{
+        ymd: string;
+        expense: number;
+        byCategory?: Array<{ name: string; amount: number }>;
+    }>;
+    currency: string;
+}) {
+    // Hook order must be stable. Compute everything regardless of
+    // whether `days` is empty; render the placeholder at the bottom.
+    const containerRef = useRef<HTMLDivElement | null>(null);
+    const [hover, setHover] = useState<{
+        cell: HeatmapCell;
+        x: number;
+        y: number;
+    } | null>(null);
+
+    const max = Math.max(...days.map((d) => d.expense), 1);
+    const first = days.length > 0 ? parseYmd(days[0]!.ymd) : new Date();
+    const firstDow = first.getUTCDay();
+
+    const cells: HeatmapCell[] = [];
+    for (let i = 0; i < days.length; i++) {
+        const idx = firstDow + i;
+        cells.push({
+            ymd: days[i]!.ymd,
+            expense: days[i]!.expense,
+            byCategory: days[i]!.byCategory ?? [],
+            col: Math.floor(idx / 7),
+            row: idx % 7,
+        });
+    }
+    const cols =
+        cells.length > 0 ? Math.max(...cells.map((c) => c.col)) + 1 : 0;
+    // GitHub-style square cells; SVG scales to fit width while
+    // preserving the viewBox aspect (12 cols × 7 rows ≈ 1.7:1). Cap
+    // the rendered width so on very wide cards the cells don't grow
+    // into mosaic tiles — the chart is more readable as a tight grid.
+    const cellSize = 14;
+    const gap = 2;
+    const width = cols * (cellSize + gap);
+    const height = 7 * (cellSize + gap);
+
     if (days.length === 0) {
         return (
             <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
@@ -348,44 +414,27 @@ export function SpendingHeatmap({
             </div>
         );
     }
-    const max = Math.max(...days.map((d) => d.expense), 1);
-    // Find the first day's weekday (0=Sun) so we know how many blank
-    // cells to pad at the top of the first column.
-    const first = parseYmd(days[0]!.ymd);
-    const firstDow = first.getUTCDay();
-
-    // Lay the cells out in column-major order: each column is a week,
-    // each cell within a column is a day.
-    const cells: Array<{
-        ymd: string;
-        expense: number;
-        col: number;
-        row: number;
-    }> = [];
-    for (let i = 0; i < days.length; i++) {
-        const idx = firstDow + i;
-        cells.push({
-            ymd: days[i]!.ymd,
-            expense: days[i]!.expense,
-            col: Math.floor(idx / 7),
-            row: idx % 7,
-        });
-    }
-    const cols = Math.max(...cells.map((c) => c.col)) + 1;
-    const cellSize = 14;
-    const gap = 2;
-    const width = cols * (cellSize + gap);
-    const height = 7 * (cellSize + gap);
 
     return (
-        <div className="flex flex-col gap-2">
+        <div ref={containerRef} className="relative flex flex-col gap-2">
             <svg
-                width="100%"
-                height={height}
                 viewBox={`0 0 ${width} ${height}`}
-                preserveAspectRatio="xMinYMid meet"
+                preserveAspectRatio="xMidYMid meet"
                 role="img"
                 aria-label="Daily spending heatmap"
+                // Scale up nicely on wider cards (~3x natural size at
+                // 600px container width) but never grow taller than the
+                // GitHub-style proportions allow. Width hits 100% only
+                // when the container is narrower than the natural
+                // viewBox; otherwise we let the height-cap drive the
+                // visible size.
+                className="block w-full"
+                style={{
+                    maxWidth: '100%',
+                    maxHeight: '160px',
+                    height: 'auto',
+                }}
+                onMouseLeave={() => setHover(null)}
             >
                 {cells.map((c) => {
                     const ratio = c.expense / max;
@@ -398,14 +447,75 @@ export function SpendingHeatmap({
                             height={cellSize}
                             rx={2}
                             fill={heatmapColor(ratio)}
-                        >
-                            <title>
-                                {c.ymd}: {formatMoney(c.expense, currency)}
-                            </title>
-                        </rect>
+                            onMouseEnter={(e) => {
+                                const rect =
+                                    containerRef.current?.getBoundingClientRect();
+                                if (!rect) {
+                                    setHover({ cell: c, x: 0, y: 0 });
+                                    return;
+                                }
+                                setHover({
+                                    cell: c,
+                                    x: e.clientX - rect.left,
+                                    y: e.clientY - rect.top,
+                                });
+                            }}
+                            onMouseMove={(e) => {
+                                const rect =
+                                    containerRef.current?.getBoundingClientRect();
+                                if (!rect) return;
+                                setHover({
+                                    cell: c,
+                                    x: e.clientX - rect.left,
+                                    y: e.clientY - rect.top,
+                                });
+                            }}
+                        />
                     );
                 })}
             </svg>
+            {hover ? (
+                <div
+                    role="tooltip"
+                    className="pointer-events-none absolute z-10 min-w-[180px] rounded-md border bg-popover p-2 text-xs shadow-md"
+                    style={{
+                        left: Math.min(
+                            hover.x + 12,
+                            (containerRef.current?.offsetWidth ?? 0) - 200,
+                        ),
+                        top: hover.y + 12,
+                    }}
+                >
+                    <p className="font-medium">
+                        {formatDateLabel(hover.cell.ymd)}
+                    </p>
+                    <p className="text-muted-foreground">
+                        Total:{' '}
+                        <span className="font-mono tabular-nums">
+                            {formatMoney(hover.cell.expense, currency)}
+                        </span>
+                    </p>
+                    {hover.cell.byCategory.length > 0 ? (
+                        <ul className="mt-1 flex flex-col gap-0.5 border-t pt-1">
+                            {hover.cell.byCategory.map((c) => (
+                                <li
+                                    key={c.name}
+                                    className="flex items-center justify-between gap-3"
+                                >
+                                    <span>{c.name}</span>
+                                    <span className="font-mono tabular-nums text-muted-foreground">
+                                        {formatMoney(c.amount, currency)}
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : hover.cell.expense === 0 ? (
+                        <p className="mt-1 text-muted-foreground">
+                            No spending.
+                        </p>
+                    ) : null}
+                </div>
+            ) : null}
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>Less</span>
                 {[0, 0.25, 0.5, 0.75, 1].map((r) => (
@@ -419,6 +529,21 @@ export function SpendingHeatmap({
             </div>
         </div>
     );
+}
+
+function formatDateLabel(ymd: string): string {
+    try {
+        const d = parseYmd(ymd);
+        return d.toLocaleDateString(undefined, {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            timeZone: 'UTC',
+        });
+    } catch {
+        return ymd;
+    }
 }
 
 function heatmapColor(ratio: number): string {
