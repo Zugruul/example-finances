@@ -382,27 +382,37 @@ export default async function DashboardPage({
         netWorthSeries.push(...seriesReverse.reverse());
     }
 
-    // ----- Daily spending heatmap (last ~52 weeks) -----
+    // ----- Daily spending heatmap (~52 weeks back, aligned to Sunday) -----
     // Per-day totals AND a per-(day, category) breakdown so the hover
     // tooltip can list categories with their share. Uncategorized rows
     // surface under "Uncategorized" so the tooltip never says "Unknown".
-    // 364 days = 52 weeks exactly — fills the strip with no half-week
-    // remainder, GitHub-style.
-    const heatmapDays = 364;
+    //
+    // We align the START of the window to the Sunday 52 weeks before
+    // the upcoming Saturday — that way the leftmost column is always a
+    // complete 7-cell column and only the RIGHTMOST column may be
+    // partial (today's incomplete week). GitHub does the same thing.
+    const todayForHeatmap = new Date();
+    todayForHeatmap.setUTCHours(0, 0, 0, 0);
+    const daysToSaturday = 6 - todayForHeatmap.getUTCDay();
+    const thisSaturday = new Date(todayForHeatmap);
+    thisSaturday.setUTCDate(thisSaturday.getUTCDate() + daysToSaturday);
+    const heatmapStart = new Date(thisSaturday);
+    // 52 weeks - 1 day to land on the Sunday at the start of week 1.
+    heatmapStart.setUTCDate(heatmapStart.getUTCDate() - 363);
+    const heatmapDays =
+        Math.round(
+            (todayForHeatmap.getTime() - heatmapStart.getTime()) /
+                (1000 * 60 * 60 * 24),
+        ) + 1;
     type DayBuckets = { total: number; byCategory: Map<string, number> };
     const heatmapMap = new Map<string, DayBuckets>();
-    {
-        const start = new Date();
-        start.setUTCHours(0, 0, 0, 0);
-        start.setUTCDate(start.getUTCDate() - (heatmapDays - 1));
-        for (let i = 0; i < heatmapDays; i++) {
-            const d = new Date(start);
-            d.setUTCDate(start.getUTCDate() + i);
-            heatmapMap.set(d.toISOString().slice(0, 10), {
-                total: 0,
-                byCategory: new Map(),
-            });
-        }
+    for (let i = 0; i < heatmapDays; i++) {
+        const d = new Date(heatmapStart);
+        d.setUTCDate(heatmapStart.getUTCDate() + i);
+        heatmapMap.set(d.toISOString().slice(0, 10), {
+            total: 0,
+            byCategory: new Map(),
+        });
     }
     if (currentTenantId) {
         const txs = await readModels.transactions.find({

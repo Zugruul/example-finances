@@ -561,26 +561,28 @@ function SpendingHeatmapImpl({
             </svg>
             {hover ? (
                 (() => {
-                    // Flip the tooltip horizontally / vertically when
-                    // it would otherwise spill out of the container.
-                    // Tooltip approx box: 220 wide × 120 tall (varies
-                    // slightly with category count; clamp covers it).
+                    // Position the tooltip 10px right + 10px below the
+                    // cursor. If that would push it past the container
+                    // edge, slide it back JUST enough to fit — no
+                    // full-flip; the tooltip stays right next to the
+                    // mouse instead of jumping to the opposite side.
                     const container = containerRef.current;
                     const cw = container?.offsetWidth ?? 0;
                     const ch = container?.offsetHeight ?? 0;
                     const tipW = 220;
                     const tipH = 120;
                     const pad = 8;
-                    let left = hover.x + 12;
-                    let top = hover.y + 12;
-                    if (left + tipW > cw - pad) {
-                        // Flip to the left of the cursor.
-                        left = Math.max(pad, hover.x - tipW - 12);
-                    }
-                    if (top + tipH > ch - pad) {
-                        // Flip above the cursor.
-                        top = Math.max(pad, hover.y - tipH - 12);
-                    }
+                    const offset = 10;
+                    let left = hover.x + offset;
+                    let top = hover.y + offset;
+                    left = Math.max(
+                        pad,
+                        Math.min(left, cw - tipW - pad),
+                    );
+                    top = Math.max(
+                        pad,
+                        Math.min(top, ch - tipH - pad),
+                    );
                     return (
                         <div
                             role="tooltip"
