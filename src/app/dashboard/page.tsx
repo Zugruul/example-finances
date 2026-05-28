@@ -20,6 +20,7 @@ import {
     CashflowForecastChart,
     IncomeExpenseBar,
     NetWorthLine,
+    Sparkline,
     SpendingDonut,
     SpendingHeatmap,
 } from './charts';
@@ -347,7 +348,9 @@ export default async function DashboardPage({
         }
     }
     // Cross-tenant: for each of the 6 months, sum income/expense
-    // across every scoped tenant.
+    // AND merge byCategory across every scoped tenant. Keeping the
+    // per-category breakdown lets the trend-sparkline card below
+    // reuse the same data without re-querying.
     const monthlyAggregates = await Promise.all(
         sixMonths.map(async ({ key }) => {
             const perTenant = await Promise.all(
@@ -358,15 +361,30 @@ export default async function DashboardPage({
                     return agg;
                 }),
             );
-            const totalIncome = perTenant.reduce(
-                (s, a) => s + (a?.income ?? 0),
-                0,
-            );
-            const totalExpense = perTenant.reduce(
-                (s, a) => s + (a?.expense ?? 0),
-                0,
-            );
-            return { key, income: totalIncome, expense: totalExpense };
+            let totalIncome = 0;
+            let totalExpense = 0;
+            const byCategory: Record<
+                string,
+                { income: number; expense: number }
+            > = {};
+            for (const a of perTenant) {
+                if (!a) continue;
+                totalIncome += a.income;
+                totalExpense += a.expense;
+                for (const [k, v] of Object.entries(a.byCategory)) {
+                    const prev = byCategory[k] ?? { income: 0, expense: 0 };
+                    byCategory[k] = {
+                        income: prev.income + v.income,
+                        expense: prev.expense + v.expense,
+                    };
+                }
+            }
+            return {
+                key,
+                income: totalIncome,
+                expense: totalExpense,
+                byCategory,
+            };
         }),
     );
     const incomeExpenseSeries = sixMonths.map((m, i) => {
@@ -377,6 +395,47 @@ export default async function DashboardPage({
             expense: a.expense,
         };
     });
+
+    // Per-category trend: each expense-typed category gets a 6-month
+    // mini-series of its expense totals. Sorted by current-month
+    // amount desc; cap at the top 6 so the card stays readable.
+    type CategoryTrend = {
+        categoryId: string;
+        name: string;
+        currentMonth: number;
+        series: Array<{ label: string; y: number }>;
+    };
+    const categoryTrendsAll: CategoryTrend[] = [];
+    {
+        const allCategoryIds = new Set<string>();
+        for (const m of monthlyAggregates) {
+            for (const k of Object.keys(m.byCategory)) allCategoryIds.add(k);
+        }
+        for (const catId of allCategoryIds) {
+            const cat = categoryById.get(catId);
+            // Skip income-typed categories on this card — it tracks
+            // SPENDING trends only.
+            if (cat && cat.categoryType !== 'expense') continue;
+            const name =
+                catId === '__uncategorized'
+                    ? 'Uncategorized'
+                    : (cat?.name ?? 'Unknown');
+            const series = sixMonths.map((m, i) => ({
+                label: m.label,
+                y: monthlyAggregates[i]!.byCategory[catId]?.expense ?? 0,
+            }));
+            const currentMonth = series[series.length - 1]?.y ?? 0;
+            if (currentMonth === 0 && series.every((p) => p.y === 0)) continue;
+            categoryTrendsAll.push({
+                categoryId: catId,
+                name,
+                currentMonth,
+                series,
+            });
+        }
+        categoryTrendsAll.sort((a, b) => b.currentMonth - a.currentMonth);
+    }
+    const categoryTrends = categoryTrendsAll.slice(0, 6);
 
     // ----- Donut: this-month spending by category -----
     // "Spending by category" — same filter as topSpending: skip
@@ -951,6 +1010,52 @@ export default async function DashboardPage({
                                     </CardContent>
                                 </Card>
                             ) : null}
+                        </section>
+                    ) : null}
+                    {categoryTrends.length > 0 ? (
+                        <section>
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Category trends</CardTitle>
+                                    <p className="text-xs text-muted-foreground">
+                                        Last 6 months — top {categoryTrends.length} expense categories by current-month
+                                        spend
+                                    </p>
+                                </CardHeader>
+                                <CardContent>
+                                    <ul className="grid grid-cols-1 gap-x-6 gap-y-3 md:grid-cols-2">
+                                        {categoryTrends.map((c) => (
+                                            <li
+                                                key={c.categoryId}
+                                                className="flex items-center gap-3"
+                                            >
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="truncate text-sm">
+                                                        {c.name}
+                                                    </p>
+                                                    <p className="text-xs text-muted-foreground">
+                                                        {formatMoney(
+                                                            c.currentMonth,
+                                                            monthlyCurrency,
+                                                        )}{' '}
+                                                        · this month
+                                                    </p>
+                                                </div>
+                                                <div className="w-24 shrink-0">
+                                                    <Sparkline
+                                                        data={c.series.map(
+                                                            (p) => ({
+                                                                x: p.label,
+                                                                y: p.y,
+                                                            }),
+                                                        )}
+                                                    />
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </CardContent>
+                            </Card>
                         </section>
                     ) : null}
                     <section className="grid gap-4 md:grid-cols-2">
