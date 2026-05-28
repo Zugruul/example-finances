@@ -523,6 +523,14 @@ function SpendingHeatmapImpl({
                 ))}
                 {cells.map((c) => {
                     const ratio = c.expense / max;
+                    // Highlight cells inside the pinned range so the
+                    // user can see what got selected during/after a
+                    // drag. The range is normalized by string compare
+                    // on ymd (lexicographic == chronological for ISO).
+                    const inPinned =
+                        pinned !== null &&
+                        c.ymd >= pinned.startYmd &&
+                        c.ymd <= pinned.endYmd;
                     return (
                         <rect
                             key={c.ymd}
@@ -532,20 +540,36 @@ function SpendingHeatmapImpl({
                             height={cellSize}
                             rx={2}
                             fill={heatmapColor(ratio)}
+                            stroke={inPinned ? 'hsl(217 91% 60%)' : 'none'}
+                            strokeWidth={inPinned ? 1.5 : 0}
+                            style={{
+                                cursor: 'pointer',
+                                userSelect: 'none',
+                            }}
                             onMouseEnter={(e) => {
                                 const rect =
                                     containerRef.current?.getBoundingClientRect();
-                                if (!rect) {
-                                    setHover({ cell: c, x: 0, y: 0 });
-                                    return;
+                                const x = rect ? e.clientX - rect.left : 0;
+                                const y = rect ? e.clientY - rect.top : 0;
+                                if (dragging && dragAnchorRef.current) {
+                                    // Extend the drag range. Normalize
+                                    // start/end so the anchor can be
+                                    // either before or after the
+                                    // current cell on the calendar.
+                                    const a = dragAnchorRef.current;
+                                    const b = c.ymd;
+                                    setPinned({
+                                        startYmd: a < b ? a : b,
+                                        endYmd: a < b ? b : a,
+                                        x,
+                                        y,
+                                    });
+                                } else if (!pinned) {
+                                    setHover({ cell: c, x, y });
                                 }
-                                setHover({
-                                    cell: c,
-                                    x: e.clientX - rect.left,
-                                    y: e.clientY - rect.top,
-                                });
                             }}
                             onMouseMove={(e) => {
+                                if (pinned || dragging) return;
                                 const rect =
                                     containerRef.current?.getBoundingClientRect();
                                 if (!rect) return;
@@ -555,78 +579,212 @@ function SpendingHeatmapImpl({
                                     y: e.clientY - rect.top,
                                 });
                             }}
+                            onMouseDown={(e) => {
+                                // Start a drag anchored here. Clears
+                                // any previous pin so a fresh selection
+                                // overrides it.
+                                e.preventDefault();
+                                const rect =
+                                    containerRef.current?.getBoundingClientRect();
+                                const x = rect ? e.clientX - rect.left : 0;
+                                const y = rect ? e.clientY - rect.top : 0;
+                                dragAnchorRef.current = c.ymd;
+                                setDragging(true);
+                                setHover(null);
+                                setPinned({
+                                    startYmd: c.ymd,
+                                    endYmd: c.ymd,
+                                    x,
+                                    y,
+                                });
+                            }}
                         />
                     );
                 })}
             </svg>
-            {hover ? (
-                (() => {
-                    // Position the tooltip 10px right + 10px below the
-                    // cursor. If that would push it past the container
-                    // edge, slide it back JUST enough to fit — no
-                    // full-flip; the tooltip stays right next to the
-                    // mouse instead of jumping to the opposite side.
-                    const container = containerRef.current;
-                    const cw = container?.offsetWidth ?? 0;
-                    const ch = container?.offsetHeight ?? 0;
-                    const tipW = 220;
-                    const tipH = 120;
-                    const pad = 8;
-                    const offset = 10;
-                    let left = hover.x + offset;
-                    let top = hover.y + offset;
-                    left = Math.max(
-                        pad,
-                        Math.min(left, cw - tipW - pad),
-                    );
-                    top = Math.max(
-                        pad,
-                        Math.min(top, ch - tipH - pad),
-                    );
-                    return (
-                        <div
-                            role="tooltip"
-                            className="pointer-events-none absolute z-10 max-w-[220px] min-w-[180px] rounded-md border bg-popover p-2 text-xs shadow-md"
-                            style={{ left, top }}
-                        >
-                            <p className="font-medium">
-                                {formatDateLabel(hover.cell.ymd)}
-                            </p>
-                            <p className="text-muted-foreground">
-                                Total:{' '}
-                                <span className="font-mono tabular-nums">
-                                    {formatMoney(
-                                        hover.cell.expense,
-                                        currency,
-                                    )}
-                                </span>
-                            </p>
-                            {hover.cell.byCategory.length > 0 ? (
-                                <ul className="mt-1 flex flex-col gap-0.5 border-t pt-1">
-                                    {hover.cell.byCategory.map((c) => (
-                                        <li
-                                            key={c.name}
-                                            className="flex items-center justify-between gap-3"
-                                        >
-                                            <span>{c.name}</span>
-                                            <span className="font-mono tabular-nums text-muted-foreground">
-                                                {formatMoney(
-                                                    c.amount,
-                                                    currency,
-                                                )}
-                                            </span>
-                                        </li>
-                                    ))}
-                                </ul>
-                            ) : hover.cell.expense === 0 ? (
-                                <p className="mt-1 text-muted-foreground">
-                                    No spending.
+            {pinned
+                ? (() => {
+                      // Aggregate every day in [startYmd, endYmd]
+                      // (inclusive). Single-day pin renders the same
+                      // category breakdown the hover tooltip did;
+                      // multi-day rolls up by category.
+                      const inRange = cells.filter(
+                          (c) =>
+                              c.ymd >= pinned.startYmd &&
+                              c.ymd <= pinned.endYmd,
+                      );
+                      const total = inRange.reduce(
+                          (s, c) => s + c.expense,
+                          0,
+                      );
+                      const catAgg = new Map<string, number>();
+                      for (const c of inRange) {
+                          for (const cat of c.byCategory) {
+                              catAgg.set(
+                                  cat.name,
+                                  (catAgg.get(cat.name) ?? 0) + cat.amount,
+                              );
+                          }
+                      }
+                      const cats = Array.from(catAgg.entries())
+                          .map(([name, amount]) => ({ name, amount }))
+                          .sort((a, b) => b.amount - a.amount);
+                      const isRange =
+                          pinned.startYmd !== pinned.endYmd;
+                      const container = containerRef.current;
+                      const cw = container?.offsetWidth ?? 0;
+                      const ch = container?.offsetHeight ?? 0;
+                      const tipW = 240;
+                      const tipH = 160;
+                      const pad = 8;
+                      const offset = 10;
+                      let left = pinned.x + offset;
+                      let top = pinned.y + offset;
+                      left = Math.max(
+                          pad,
+                          Math.min(left, cw - tipW - pad),
+                      );
+                      top = Math.max(
+                          pad,
+                          Math.min(top, ch - tipH - pad),
+                      );
+                      const viewHref = tenantId
+                          ? `/tenants/${tenantId}/transactions?from=${pinned.startYmd}&to=${pinned.endYmd}&transactionType=expense`
+                          : null;
+                      return (
+                          <div
+                              role="dialog"
+                              className="absolute z-20 max-w-[260px] min-w-[200px] rounded-md border bg-popover p-2 text-xs shadow-md"
+                              style={{ left, top }}
+                          >
+                              <div className="flex items-start justify-between gap-2">
+                                  <p className="font-medium">
+                                      {isRange
+                                          ? `${formatDateLabel(pinned.startYmd)} — ${formatDateLabel(pinned.endYmd)}`
+                                          : formatDateLabel(
+                                                pinned.startYmd,
+                                            )}
+                                  </p>
+                                  <button
+                                      type="button"
+                                      className="text-muted-foreground hover:text-foreground"
+                                      aria-label="Clear selection"
+                                      onClick={() => {
+                                          setPinned(null);
+                                          dragAnchorRef.current = null;
+                                      }}
+                                  >
+                                      ✕
+                                  </button>
+                              </div>
+                              <p className="text-muted-foreground">
+                                  Total:{' '}
+                                  <span className="font-mono tabular-nums">
+                                      {formatMoney(total, currency)}
+                                  </span>
+                                  {isRange ? (
+                                      <span className="ml-1">
+                                          · {inRange.length} day
+                                          {inRange.length === 1 ? '' : 's'}
+                                      </span>
+                                  ) : null}
+                              </p>
+                              {cats.length > 0 ? (
+                                  <ul className="mt-1 flex flex-col gap-0.5 border-t pt-1">
+                                      {cats.slice(0, 6).map((c) => (
+                                          <li
+                                              key={c.name}
+                                              className="flex items-center justify-between gap-3"
+                                          >
+                                              <span>{c.name}</span>
+                                              <span className="font-mono tabular-nums text-muted-foreground">
+                                                  {formatMoney(
+                                                      c.amount,
+                                                      currency,
+                                                  )}
+                                              </span>
+                                          </li>
+                                      ))}
+                                  </ul>
+                              ) : total === 0 ? (
+                                  <p className="mt-1 text-muted-foreground">
+                                      No spending in this range.
+                                  </p>
+                              ) : null}
+                              {viewHref ? (
+                                  <a
+                                      href={viewHref}
+                                      className="mt-2 inline-block text-sky-600 hover:text-sky-700 hover:underline dark:text-sky-400"
+                                  >
+                                      View in transactions →
+                                  </a>
+                              ) : null}
+                          </div>
+                      );
+                  })()
+                : hover
+                  ? (() => {
+                        const container = containerRef.current;
+                        const cw = container?.offsetWidth ?? 0;
+                        const ch = container?.offsetHeight ?? 0;
+                        const tipW = 220;
+                        const tipH = 120;
+                        const pad = 8;
+                        const offset = 10;
+                        let left = hover.x + offset;
+                        let top = hover.y + offset;
+                        left = Math.max(
+                            pad,
+                            Math.min(left, cw - tipW - pad),
+                        );
+                        top = Math.max(
+                            pad,
+                            Math.min(top, ch - tipH - pad),
+                        );
+                        return (
+                            <div
+                                role="tooltip"
+                                className="pointer-events-none absolute z-10 max-w-[220px] min-w-[180px] rounded-md border bg-popover p-2 text-xs shadow-md"
+                                style={{ left, top }}
+                            >
+                                <p className="font-medium">
+                                    {formatDateLabel(hover.cell.ymd)}
                                 </p>
-                            ) : null}
-                        </div>
-                    );
-                })()
-            ) : null}
+                                <p className="text-muted-foreground">
+                                    Total:{' '}
+                                    <span className="font-mono tabular-nums">
+                                        {formatMoney(
+                                            hover.cell.expense,
+                                            currency,
+                                        )}
+                                    </span>
+                                </p>
+                                {hover.cell.byCategory.length > 0 ? (
+                                    <ul className="mt-1 flex flex-col gap-0.5 border-t pt-1">
+                                        {hover.cell.byCategory.map((c) => (
+                                            <li
+                                                key={c.name}
+                                                className="flex items-center justify-between gap-3"
+                                            >
+                                                <span>{c.name}</span>
+                                                <span className="font-mono tabular-nums text-muted-foreground">
+                                                    {formatMoney(
+                                                        c.amount,
+                                                        currency,
+                                                    )}
+                                                </span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : hover.cell.expense === 0 ? (
+                                    <p className="mt-1 text-muted-foreground">
+                                        No spending.
+                                    </p>
+                                ) : null}
+                            </div>
+                        );
+                    })()
+                  : null}
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>Less</span>
                 {[0, 0.25, 0.5, 0.75, 1].map((r) => (

@@ -748,6 +748,7 @@ export default async function DashboardPage({
                                 <SpendingHeatmap
                                     days={heatmapData}
                                     currency={monthlyCurrency}
+                                    tenantId={currentTenantId}
                                 />
                             </CardContent>
                         </Card>
