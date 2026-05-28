@@ -829,7 +829,18 @@ export default async function DashboardPage({
     }
 
     // ----- existing activity feed -----
-    const allActivity = (await readModels.activity.find({})) as ActivityDoc[];
+    // Tenant-scoped reads only — query per tenant and flatten. The
+    // previous shape did `find({})` then post-filtered in memory,
+    // which pulled cross-tenant rows into the request even though
+    // they got dropped before render. Tightening here so an
+    // unprivileged caller can never reach data outside their
+    // memberships.
+    const perTenantActivity = await Promise.all(
+        myTenantIds.map((tid) =>
+            readModels.activity.find({ tenantId: tid as SorcUUID }),
+        ),
+    );
+    const allActivity = perTenantActivity.flat() as ActivityDoc[];
     const recentActivity = allActivity
         .filter((a) => !a.tenantId || myTenantIdSet.has(String(a.tenantId)))
         .sort(
