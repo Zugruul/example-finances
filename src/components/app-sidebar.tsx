@@ -396,17 +396,17 @@ function ModuleGroup({
             <button
                 type="button"
                 onClick={() => setOpen((v) => !v)}
-                className="group/m flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground transition hover:bg-sidebar-accent"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-sidebar-foreground/80 transition hover:bg-sidebar-accent"
                 aria-expanded={open || moduleActive}
             >
                 <ChevronRightIcon
                     className={
-                        'size-3 shrink-0 transition-transform ' +
+                        'size-3.5 shrink-0 text-muted-foreground transition-transform ' +
                         (open || moduleActive ? 'rotate-90' : '')
                     }
                 />
-                <Icon className="size-3.5" />
-                <span>{m.name}</span>
+                <Icon className="size-4" />
+                <span className="truncate">{m.name}</span>
             </button>
             {open || moduleActive ? (
                 <div className="ml-3 flex flex-col">
