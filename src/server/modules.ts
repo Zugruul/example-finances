@@ -75,7 +75,7 @@ export const installModuleAction = withActorContext(
         revalidatePath('/', 'layout');
         redirect(
             withToast(
-                `/tenants/${tenantId}`,
+                '/modules',
                 'success',
                 `Installed ${manifest.name}`,
             ),

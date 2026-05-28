@@ -14,19 +14,26 @@ import { SubmitButton } from '@/components/submit-button';
 import { EmptyState } from '@/components/empty-state';
 import { BreadcrumbBar } from '@/components/breadcrumb-bar';
 import { NotebookPenIcon, LockIcon } from 'lucide-react';
+import Link from 'next/link';
 import {
     createPsychologistNoteAction,
     lockPsychologistNoteAction,
+    updatePsychologistNoteAction,
 } from '@/server/psychologist';
+import { Button } from '@/components/ui/button';
 
 type Params = { tenantId: string };
+type SearchParams = { edit?: string };
 
 export const dynamic = 'force-dynamic';
 
 export default async function PsychologistNotesPage(props: {
     params: Promise<Params>;
+    searchParams: Promise<SearchParams>;
 }) {
     const { tenantId } = await props.params;
+    const sp = await props.searchParams;
+    const editingNoteId = sp.edit ?? null;
     const session = await auth();
     const userId = session?.user?.id;
 
@@ -152,26 +159,92 @@ export default async function PsychologistNotesPage(props: {
                                                 </span>
                                             </div>
                                             {canManage && !n.isLocked ? (
-                                                <form
-                                                    action={lockPsychologistNoteAction.bind(
-                                                        null,
-                                                        tenantId,
-                                                        String(n.noteId),
+                                                <div className="flex gap-1">
+                                                    {editingNoteId !==
+                                                    String(n.noteId) ? (
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            nativeButton={false}
+                                                            render={
+                                                                <Link
+                                                                    href={`/tenants/${tenantId}/psychologist/notes?edit=${n.noteId}#note-${n.noteId}`}
+                                                                >
+                                                                    Edit
+                                                                </Link>
+                                                            }
+                                                        />
+                                                    ) : (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            nativeButton={false}
+                                                            render={
+                                                                <Link
+                                                                    href={`/tenants/${tenantId}/psychologist/notes`}
+                                                                >
+                                                                    Cancel
+                                                                </Link>
+                                                            }
+                                                        />
                                                     )}
-                                                >
-                                                    <SubmitButton
-                                                        size="sm"
-                                                        variant="ghost"
-                                                        pendingLabel="Locking…"
+                                                    <form
+                                                        action={lockPsychologistNoteAction.bind(
+                                                            null,
+                                                            tenantId,
+                                                            String(n.noteId),
+                                                        )}
                                                     >
-                                                        Lock
-                                                    </SubmitButton>
-                                                </form>
+                                                        <SubmitButton
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            pendingLabel="Locking…"
+                                                        >
+                                                            Lock
+                                                        </SubmitButton>
+                                                    </form>
+                                                </div>
                                             ) : null}
                                         </div>
-                                        <p className="mt-2 whitespace-pre-wrap text-sm">
-                                            {n.body}
-                                        </p>
+                                        {editingNoteId === String(n.noteId) &&
+                                        canManage &&
+                                        !n.isLocked ? (
+                                            <form
+                                                id={`note-${n.noteId}`}
+                                                action={updatePsychologistNoteAction.bind(
+                                                    null,
+                                                    tenantId,
+                                                    String(n.noteId),
+                                                )}
+                                                className="mt-2 flex flex-col gap-2"
+                                            >
+                                                <Input
+                                                    name="title"
+                                                    defaultValue={n.title}
+                                                    required
+                                                    maxLength={200}
+                                                />
+                                                <textarea
+                                                    name="body"
+                                                    rows={6}
+                                                    defaultValue={n.body}
+                                                    required
+                                                    className="rounded-md border bg-background px-3 py-2 text-sm"
+                                                />
+                                                <div className="flex gap-2">
+                                                    <SubmitButton
+                                                        size="sm"
+                                                        pendingLabel="Saving…"
+                                                    >
+                                                        Save changes
+                                                    </SubmitButton>
+                                                </div>
+                                            </form>
+                                        ) : (
+                                            <p className="mt-2 whitespace-pre-wrap text-sm">
+                                                {n.body}
+                                            </p>
+                                        )}
                                     </li>
                                 );
                             })}

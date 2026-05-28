@@ -336,6 +336,41 @@ export const createPsychologistNoteAction = withActorContext(
     },
 );
 
+export const updatePsychologistNoteAction = withActorContext(
+    async (tenantId: string, noteId: string, formData: FormData) => {
+        const session = await requireSession();
+        const userId = session.user!.id as SorcUUID;
+        const actorId = effectiveAttributedId(session);
+        await requireRole(tenantId, userId, ['owner', 'admin', 'member']);
+
+        const title = String(formData.get('title') ?? '').trim();
+        const body = String(formData.get('body') ?? '').trim();
+        if (!title || !body) {
+            throw new Error('Title and body are required.');
+        }
+        const stream = noteStream(noteId);
+        await aggregates.psychologistNote.execute(
+            'updatePsychologistNote',
+            {
+                tenantId: tenantId as SorcUUID,
+                title,
+                body,
+                updatedByUserId: actorId,
+                stream,
+            } as never,
+            { store: 'mongostore' as never, stream },
+        );
+        revalidatePath(`/tenants/${tenantId}/psychologist/notes`);
+        redirect(
+            withToast(
+                `/tenants/${tenantId}/psychologist/notes`,
+                'success',
+                'Note updated',
+            ),
+        );
+    },
+);
+
 export const lockPsychologistNoteAction = withActorContext(
     async (tenantId: string, noteId: string) => {
         const session = await requireSession();
