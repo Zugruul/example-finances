@@ -223,6 +223,12 @@ export default async function DashboardPage({
         categories.map((c) => [String(c.categoryId), c]),
     );
 
+    // "Top spending categories" is a SPENDING list — only expense-typed
+    // categories should appear. Reverting an income transaction emits
+    // an expense in the same income-typed category to nullify it; that
+    // expense leaks into monthly.byCategory and used to show up here
+    // (e.g. "Salary R$25,000" when a salary was reverted). Filter
+    // those out by checking the category's declared type.
     const topSpending = monthly
         ? Object.entries(monthly.byCategory)
               .map(([catId, v]) => ({
@@ -232,8 +238,15 @@ export default async function DashboardPage({
                           ? 'Uncategorized'
                           : (categoryById.get(catId)?.name ?? 'Unknown'),
                   expense: v.expense,
+                  // Uncategorized is implicitly "spending" when it shows
+                  // up here (we already filter expense>0). Named
+                  // categories must be type=expense to qualify.
+                  isExpenseCategory:
+                      catId === '__uncategorized'
+                          ? true
+                          : categoryById.get(catId)?.categoryType === 'expense',
               }))
-              .filter((row) => row.expense > 0)
+              .filter((row) => row.expense > 0 && row.isExpenseCategory)
               .sort((a, b) => b.expense - a.expense)
               .slice(0, 5)
         : [];
@@ -309,6 +322,9 @@ export default async function DashboardPage({
     });
 
     // ----- Donut: this-month spending by category -----
+    // "Spending by category" — same filter as topSpending: skip
+    // income-typed categories that have accidental expense balances
+    // (revert-of-income emits an expense in the income category).
     const donutData = monthly
         ? Object.entries(monthly.byCategory)
               .map(([catId, v]) => ({
@@ -317,8 +333,13 @@ export default async function DashboardPage({
                           ? 'Uncategorized'
                           : (categoryById.get(catId)?.name ?? 'Unknown'),
                   value: v.expense,
+                  isExpenseCategory:
+                      catId === '__uncategorized'
+                          ? true
+                          : categoryById.get(catId)?.categoryType === 'expense',
               }))
-              .filter((row) => row.value > 0)
+              .filter((row) => row.value > 0 && row.isExpenseCategory)
+              .map(({ name, value }) => ({ name, value }))
         : [];
 
     // ----- Net-worth: last-12-months retrospective -----
