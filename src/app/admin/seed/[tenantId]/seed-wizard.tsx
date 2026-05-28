@@ -56,37 +56,77 @@ function PhaseReview({
     tenant: Props['tenant'];
 }) {
     const total = plan.items.reduce((s, i) => s + i.count, 0);
+
+    // Dependencies between seed kinds. Each item's `depends` line tells
+    // the operator which prior step's records the entries here will
+    // wire up to by name. Useful for "if I disable categories, what
+    // breaks downstream".
+    const dependencyByKind: Record<string, string | null> = {
+        Accounts: null,
+        Categories: null,
+        Budgets: 'Categories (by name)',
+        'Recurring templates': 'Accounts + Categories (by name)',
+        'Sample transactions': 'Accounts + Categories (by name)',
+    };
+
     return (
         <Card>
             <CardHeader>
                 <CardTitle>Phase 1 · Review</CardTitle>
                 <p className="text-sm text-muted-foreground">
                     Seeding tenant <strong>{tenant.displayName}</strong> will
-                    create <strong>{total}</strong> records:
+                    create <strong>{total}</strong> records. Expand each
+                    section for the exact items.
                 </p>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
                 <ul className="flex flex-col gap-2">
-                    {plan.items.map((i) => (
-                        <li
-                            key={i.kind}
-                            className="flex items-center justify-between rounded-md border p-3"
-                        >
-                            <div>
-                                <p className="text-sm font-medium">
-                                    {i.kind}
-                                </p>
-                                {i.note ? (
-                                    <p className="text-xs text-muted-foreground">
-                                        {i.note}
-                                    </p>
-                                ) : null}
-                            </div>
-                            <Badge variant="outline" className="text-xs">
-                                ×{i.count}
-                            </Badge>
-                        </li>
-                    ))}
+                    {plan.items.map((i) => {
+                        const dep = dependencyByKind[i.kind] ?? null;
+                        return (
+                            <li
+                                key={i.kind}
+                                className="rounded-md border"
+                            >
+                                <details className="group">
+                                    <summary className="flex cursor-pointer items-center justify-between gap-3 p-3 list-none">
+                                        <div className="flex items-center gap-2">
+                                            <span
+                                                aria-hidden
+                                                className="inline-block text-muted-foreground transition-transform group-open:rotate-90"
+                                            >
+                                                ›
+                                            </span>
+                                            <div>
+                                                <p className="text-sm font-medium">
+                                                    {i.kind}
+                                                </p>
+                                                {i.note ? (
+                                                    <p className="text-xs text-muted-foreground">
+                                                        {i.note}
+                                                    </p>
+                                                ) : null}
+                                                {dep ? (
+                                                    <p className="text-xs text-muted-foreground">
+                                                        Depends on: {dep}
+                                                    </p>
+                                                ) : null}
+                                            </div>
+                                        </div>
+                                        <Badge
+                                            variant="outline"
+                                            className="text-xs"
+                                        >
+                                            ×{i.count}
+                                        </Badge>
+                                    </summary>
+                                    <div className="border-t bg-muted/30 px-3 py-2">
+                                        <ItemSummary kind={i.kind} plan={plan} />
+                                    </div>
+                                </details>
+                            </li>
+                        );
+                    })}
                 </ul>
                 <div className="flex justify-between gap-2 pt-2">
                     <Link href="/admin">
@@ -99,6 +139,134 @@ function PhaseReview({
             </CardContent>
         </Card>
     );
+}
+
+function ItemSummary({ kind, plan }: { kind: string; plan: SeedPlan }) {
+    if (kind === 'Accounts') {
+        return (
+            <ul className="flex flex-col gap-1 text-sm">
+                {plan.accounts.map((a) => (
+                    <li
+                        key={a.name}
+                        className="flex items-center justify-between gap-3"
+                    >
+                        <div className="flex items-center gap-2">
+                            <span className="font-medium">{a.name}</span>
+                            <Badge variant="outline" className="text-[10px]">
+                                {a.type}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                                {a.currency}
+                            </span>
+                        </div>
+                        <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                            opening {formatMinor(a.openingBalance, a.currency)}
+                        </span>
+                    </li>
+                ))}
+            </ul>
+        );
+    }
+    if (kind === 'Categories') {
+        return (
+            <ul className="grid grid-cols-2 gap-1 text-sm">
+                {plan.categories.map((c) => (
+                    <li
+                        key={c.name}
+                        className="flex items-center justify-between gap-2"
+                    >
+                        <span>{c.name}</span>
+                        <Badge variant="outline" className="text-[10px]">
+                            {c.type}
+                        </Badge>
+                    </li>
+                ))}
+            </ul>
+        );
+    }
+    if (kind === 'Budgets') {
+        return (
+            <ul className="flex flex-col gap-1 text-sm">
+                {plan.budgets.map((b) => (
+                    <li
+                        key={b.categoryName}
+                        className="flex items-center justify-between gap-2"
+                    >
+                        <span>{b.categoryName}</span>
+                        <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                            {formatMinor(b.monthlyAmount, 'USD')} / mo
+                        </span>
+                    </li>
+                ))}
+            </ul>
+        );
+    }
+    if (kind === 'Recurring templates') {
+        return (
+            <ul className="flex flex-col gap-1 text-sm">
+                {plan.templates.map((t) => (
+                    <li
+                        key={t.description}
+                        className="flex flex-wrap items-center justify-between gap-2"
+                    >
+                        <div className="flex items-center gap-2">
+                            <span className="font-medium">{t.description}</span>
+                            <Badge variant="outline" className="text-[10px]">
+                                {t.type}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                                {t.cadence.kind === 'monthly'
+                                    ? `monthly · day ${t.cadence.dayOfMonth}`
+                                    : `biweekly · dow ${t.cadence.dayOfWeek}`}
+                            </span>
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                            <span className="font-mono tabular-nums">
+                                {formatMinor(t.amount, 'USD')}
+                            </span>{' '}
+                            · {t.accountName} · {t.categoryName}
+                        </span>
+                    </li>
+                ))}
+            </ul>
+        );
+    }
+    if (kind === 'Sample transactions') {
+        return (
+            <div className="flex flex-col gap-1 text-sm">
+                <p className="text-muted-foreground">
+                    Generated procedurally — ~5 transactions per month for
+                    the last 6 months, distributed across the expense
+                    categories. Each pulls an account (round-robin) and a
+                    category (weighted toward Groceries / Dining /
+                    Transport). Amounts vary $5–$250.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                    Exact rows aren't pre-computed in the plan — the
+                    seeder produces them at run-time so the dates anchor
+                    to the day you click Seed.
+                </p>
+            </div>
+        );
+    }
+    return (
+        <p className="text-xs text-muted-foreground">
+            No further breakdown available.
+        </p>
+    );
+}
+
+function formatMinor(minor: number, currency: string): string {
+    const major = minor / 100;
+    try {
+        return new Intl.NumberFormat(undefined, {
+            style: 'currency',
+            currency,
+            currencyDisplay: 'narrowSymbol',
+        }).format(major);
+    } catch {
+        return `${major.toFixed(2)} ${currency}`;
+    }
 }
 
 function PhaseConfirm({
