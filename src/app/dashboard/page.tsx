@@ -194,31 +194,75 @@ export default async function DashboardPage({
         );
     }
 
-    // Pick the "current" tenant for per-tenant cards. Honors a
-    // `?tenantId=X` filter when X is one of the user's tenants;
-    // otherwise falls back to the first tenant (default "All Tenants"
-    // view shows the first tenant's data for now — a real cross-tenant
-    // aggregation pass can come later without changing the URL contract).
+    // Tenant scope. `?tenantId=X` locks the per-tenant cards to that
+    // one; otherwise "All tenants" mode aggregates across every tenant
+    // the user belongs to (sums income/expense, unions categories,
+    // concats budgets/recurring, etc). Net worth was already
+    // currency-bucketed and ignores scope.
     const validatedRequestedTenantId =
         requestedTenantId && myTenantIdSet.has(requestedTenantId)
             ? requestedTenantId
             : undefined;
-    const currentTenantId = validatedRequestedTenantId ?? myTenantIds[0];
+    const scopedTenantIds = validatedRequestedTenantId
+        ? [validatedRequestedTenantId]
+        : myTenantIds;
+    const currentTenantId =
+        validatedRequestedTenantId ?? myTenantIds[0];
     const isScopedToOneTenant = Boolean(validatedRequestedTenantId);
     const { key: ymKey, year, month } = currentYearMonth();
-    const monthly = currentTenantId
-        ? (
-              await readModels.monthlyAggregate.find({
-                  aggregateKey: `${currentTenantId}:${ymKey}`,
-              })
-          )[0]
+
+    // Merge this-month aggregates across the scope. byCategory is
+    // keyed by categoryId — uuid collisions across tenants are
+    // statistically impossible so a flat merge is safe.
+    type MonthlyMerged = {
+        income: number;
+        expense: number;
+        net: number;
+        byCategory: Record<string, { income: number; expense: number }>;
+    } | undefined;
+    const monthlyAggs = await Promise.all(
+        scopedTenantIds.map(async (tid) => {
+            const [agg] = await readModels.monthlyAggregate.find({
+                aggregateKey: `${tid}:${ymKey}`,
+            });
+            return agg;
+        }),
+    );
+    const monthly: MonthlyMerged = monthlyAggs.some((a) => a)
+        ? monthlyAggs.reduce<MonthlyMerged>((acc, m) => {
+              if (!m) return acc;
+              if (!acc) {
+                  return {
+                      income: m.income,
+                      expense: m.expense,
+                      net: m.net,
+                      byCategory: { ...m.byCategory },
+                  };
+              }
+              acc.income += m.income;
+              acc.expense += m.expense;
+              acc.net += m.net;
+              for (const [k, v] of Object.entries(m.byCategory)) {
+                  const prev = acc.byCategory[k] ?? {
+                      income: 0,
+                      expense: 0,
+                  };
+                  acc.byCategory[k] = {
+                      income: prev.income + v.income,
+                      expense: prev.expense + v.expense,
+                  };
+              }
+              return acc;
+          }, undefined)
         : undefined;
 
-    const categories = currentTenantId
-        ? await readModels.categoriesByTenant.find({
-              tenantId: currentTenantId,
-          })
-        : [];
+    const categories = (
+        await Promise.all(
+            scopedTenantIds.map((tid) =>
+                readModels.categoriesByTenant.find({ tenantId: tid }),
+            ),
+        )
+    ).flat();
     const categoryById = new Map(
         categories.map((c) => [String(c.categoryId), c]),
     );
@@ -302,22 +346,35 @@ export default async function DashboardPage({
             });
         }
     }
-    const monthlyAggregates = currentTenantId
-        ? await Promise.all(
-              sixMonths.map(async ({ key }) => {
-                  const [agg] = await readModels.monthlyAggregate.find({
-                      aggregateKey: `${currentTenantId}:${key}`,
-                  });
-                  return { key, agg };
-              }),
-          )
-        : [];
+    // Cross-tenant: for each of the 6 months, sum income/expense
+    // across every scoped tenant.
+    const monthlyAggregates = await Promise.all(
+        sixMonths.map(async ({ key }) => {
+            const perTenant = await Promise.all(
+                scopedTenantIds.map(async (tid) => {
+                    const [agg] = await readModels.monthlyAggregate.find({
+                        aggregateKey: `${tid}:${key}`,
+                    });
+                    return agg;
+                }),
+            );
+            const totalIncome = perTenant.reduce(
+                (s, a) => s + (a?.income ?? 0),
+                0,
+            );
+            const totalExpense = perTenant.reduce(
+                (s, a) => s + (a?.expense ?? 0),
+                0,
+            );
+            return { key, income: totalIncome, expense: totalExpense };
+        }),
+    );
     const incomeExpenseSeries = sixMonths.map((m, i) => {
-        const agg = monthlyAggregates[i]?.agg;
+        const a = monthlyAggregates[i]!;
         return {
             label: m.label,
-            income: agg?.income ?? 0,
-            expense: agg?.expense ?? 0,
+            income: a.income,
+            expense: a.expense,
         };
     });
 
@@ -369,22 +426,29 @@ export default async function DashboardPage({
             });
         }
     }
-    const twelveMonthAggs = currentTenantId
-        ? await Promise.all(
-              twelveMonths.map(async ({ key }) => {
-                  const [agg] = await readModels.monthlyAggregate.find({
-                      aggregateKey: `${currentTenantId}:${key}`,
-                  });
-                  return { key, agg };
-              }),
-          )
-        : [];
-    // Build forward-walking balance: start = liveNetWorth minus the
-    // current (incomplete) month's net to get end-of-last-month.
-    // Then subtract each prior month's net to step backwards.
-    const netByMonth = twelveMonthAggs.map(
-        ({ agg }) => (agg?.income ?? 0) - (agg?.expense ?? 0),
+    // Cross-tenant: per-month net = sum over scoped tenants of
+    // (income - expense). Transfers cancel within a tenant, so this
+    // stays correct regardless of how many tenants are in scope.
+    const twelveMonthAggs = await Promise.all(
+        twelveMonths.map(async ({ key }) => {
+            const perTenant = await Promise.all(
+                scopedTenantIds.map(async (tid) => {
+                    const [agg] = await readModels.monthlyAggregate.find({
+                        aggregateKey: `${tid}:${key}`,
+                    });
+                    return agg;
+                }),
+            );
+            return {
+                key,
+                net: perTenant.reduce(
+                    (s, a) => s + ((a?.income ?? 0) - (a?.expense ?? 0)),
+                    0,
+                ),
+            };
+        }),
     );
+    const netByMonth = twelveMonthAggs.map((m) => m.net);
     const netWorthSeries: Array<{ label: string; balance: number }> = [];
     {
         let running = liveNetWorth;
@@ -435,10 +499,10 @@ export default async function DashboardPage({
             byCategory: new Map(),
         });
     }
-    if (currentTenantId) {
-        const txs = await readModels.transactions.find({
-            tenantId: currentTenantId,
-        });
+    // Cross-tenant: pull transactions from every scoped tenant and
+    // accumulate into the same per-day buckets.
+    for (const tid of scopedTenantIds) {
+        const txs = await readModels.transactions.find({ tenantId: tid });
         for (const t of txs) {
             if (t.isDeleted) continue;
             if (t.transactionType !== 'expense') continue;
@@ -464,32 +528,38 @@ export default async function DashboardPage({
                 .sort((a, b) => b.amount - a.amount),
         }));
 
-    const budgets = currentTenantId
-        ? (
-              await readModels.budgetsByTenant.find({
-                  tenantId: currentTenantId,
-              })
-          ).filter((b) => !b.isArchived)
-        : [];
+    // Cross-tenant: budgets + recurring are concatenated across every
+    // scoped tenant. Single-tenant mode is just a list-of-one tenant
+    // under the same path.
+    const budgets = (
+        await Promise.all(
+            scopedTenantIds.map((tid) =>
+                readModels.budgetsByTenant.find({ tenantId: tid }),
+            ),
+        )
+    )
+        .flat()
+        .filter((b) => !b.isArchived);
 
-    const recurring = currentTenantId
-        ? (
-              await readModels.recurringTemplates.find({
-                  tenantId: currentTenantId,
-              })
-          )
-              .filter((t) => !t.isArchived)
-              .map((t) => ({
-                  ...t,
-                  next: nextDueOn(
-                      t.cadence,
-                      t.startsOn,
-                      t.lastMaterializedOn,
-                      t.endsOn,
-                  ),
-              }))
-              .filter((t) => t.next !== null)
-        : [];
+    const recurring = (
+        await Promise.all(
+            scopedTenantIds.map((tid) =>
+                readModels.recurringTemplates.find({ tenantId: tid }),
+            ),
+        )
+    )
+        .flat()
+        .filter((t) => !t.isArchived)
+        .map((t) => ({
+            ...t,
+            next: nextDueOn(
+                t.cadence,
+                t.startsOn,
+                t.lastMaterializedOn,
+                t.endsOn,
+            ),
+        }))
+        .filter((t) => t.next !== null);
     const today = new Date().toISOString().slice(0, 10);
     const sevenDays = new Date();
     sevenDays.setUTCDate(sevenDays.getUTCDate() + 7);
@@ -528,20 +598,20 @@ export default async function DashboardPage({
     forecastEnd.setUTCDate(forecastEnd.getUTCDate() + horizonDays);
     const forecastEndYmd = forecastEnd.toISOString().slice(0, 10);
     const deltaByDay = new Map<string, number>();
-    if (currentTenantId) {
-        for (const t of recurring) {
-            const due = dueDatesUpTo(
-                t.cadence,
-                t.startsOn,
-                t.lastMaterializedOn,
-                t.endsOn,
-                forecastEndYmd,
-            );
-            for (const d of due) {
-                if (d < forecastStart.toISOString().slice(0, 10)) continue;
-                const sign = t.transactionType === 'income' ? 1 : -1;
-                deltaByDay.set(d, (deltaByDay.get(d) ?? 0) + sign * t.amount);
-            }
+    // Forecast iterates `recurring` which already spans every scoped
+    // tenant (the templates loader above flattens across tenants).
+    for (const t of recurring) {
+        const due = dueDatesUpTo(
+            t.cadence,
+            t.startsOn,
+            t.lastMaterializedOn,
+            t.endsOn,
+            forecastEndYmd,
+        );
+        for (const d of due) {
+            if (d < forecastStart.toISOString().slice(0, 10)) continue;
+            const sign = t.transactionType === 'income' ? 1 : -1;
+            deltaByDay.set(d, (deltaByDay.get(d) ?? 0) + sign * t.amount);
         }
     }
     const forecastSeries: Array<{ label: string; balance: number }> = [];
@@ -748,7 +818,16 @@ export default async function DashboardPage({
                                 <SpendingHeatmap
                                     days={heatmapData}
                                     currency={monthlyCurrency}
-                                    tenantId={currentTenantId}
+                                    // Only thread the tenantId when the
+                                    // dashboard is scoped to one tenant
+                                    // — in "All tenants" mode the
+                                    // "View in transactions" link target
+                                    // is ambiguous, so suppress it.
+                                    tenantId={
+                                        isScopedToOneTenant
+                                            ? currentTenantId
+                                            : undefined
+                                    }
                                 />
                             </CardContent>
                         </Card>
