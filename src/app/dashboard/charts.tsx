@@ -401,16 +401,36 @@ function SpendingHeatmapImpl({
         y: number;
     } | null>(null);
     const [dragging, setDragging] = useState(false);
+    // While dragging, the tooltip shows only the date-range header.
+    // After the pointer pauses on a cell for `DRAG_PAUSE_MS`, the
+    // tooltip flips to show the spending breakdown — useful for
+    // "is this range what I wanted?" without leaving the drag.
+    const [dragPaused, setDragPaused] = useState(false);
     const dragAnchorRef = useRef<string | null>(null);
+    const DRAG_PAUSE_MS = 400;
 
     // Release drag on global mouseup so dragging off the SVG still
     // commits the selection.
     useEffect(() => {
         if (!dragging) return;
-        const onUp = () => setDragging(false);
+        const onUp = () => {
+            setDragging(false);
+            setDragPaused(false);
+        };
         window.addEventListener('mouseup', onUp);
         return () => window.removeEventListener('mouseup', onUp);
     }, [dragging]);
+
+    // Pause-timer: re-armed every time the drag enters a new cell
+    // (tracked via pinned.endYmd). Expires after DRAG_PAUSE_MS of
+    // mouse-stillness — at which point we flip the tooltip to the
+    // detailed-breakdown view.
+    useEffect(() => {
+        if (!dragging) return;
+        setDragPaused(false);
+        const id = window.setTimeout(() => setDragPaused(true), DRAG_PAUSE_MS);
+        return () => window.clearTimeout(id);
+    }, [dragging, pinned?.endYmd, pinned?.startYmd]);
 
     const max = Math.max(...days.map((d) => d.expense), 1);
     const first = days.length > 0 ? parseYmd(days[0]!.ymd) : new Date();
@@ -651,11 +671,29 @@ function SpendingHeatmapImpl({
                       const viewHref = tenantId
                           ? `/tenants/${tenantId}/transactions?from=${pinned.startYmd}&to=${pinned.endYmd}&transactionType=expense`
                           : null;
+                      // While the user is actively dragging, three
+                      // things change:
+                      //   1. Tooltip is pointer-transparent — dragging
+                      //      THROUGH it onto cells underneath still
+                      //      extends the range (the user's complaint
+                      //      that the tooltip "blocked" the drag).
+                      //   2. Body shrinks to just the date-range header
+                      //      so it stays compact while moving.
+                      //   3. After ~400ms of stillness on a cell
+                      //      (dragPaused), the body expands to show
+                      //      the breakdown — without committing the
+                      //      drag. Releasing then pins it with the
+                      //      "View in transactions" link.
+                      const showDetail = !dragging || dragPaused;
                       return (
                           <div
                               role="dialog"
                               className="absolute z-20 max-w-[260px] min-w-[200px] rounded-md border bg-popover p-2 text-xs shadow-md"
-                              style={{ left, top }}
+                              style={{
+                                  left,
+                                  top,
+                                  pointerEvents: dragging ? 'none' : 'auto',
+                              }}
                           >
                               <div className="flex items-start justify-between gap-2">
                                   <p className="font-medium">
@@ -665,18 +703,31 @@ function SpendingHeatmapImpl({
                                                 pinned.startYmd,
                                             )}
                                   </p>
-                                  <button
-                                      type="button"
-                                      className="text-muted-foreground hover:text-foreground"
-                                      aria-label="Clear selection"
-                                      onClick={() => {
-                                          setPinned(null);
-                                          dragAnchorRef.current = null;
-                                      }}
-                                  >
-                                      ✕
-                                  </button>
+                                  {!dragging ? (
+                                      <button
+                                          type="button"
+                                          className="text-muted-foreground hover:text-foreground"
+                                          aria-label="Clear selection"
+                                          onClick={() => {
+                                              setPinned(null);
+                                              dragAnchorRef.current = null;
+                                          }}
+                                      >
+                                          ✕
+                                      </button>
+                                  ) : null}
                               </div>
+                              {isRange && dragging && !dragPaused ? (
+                                  <p className="text-muted-foreground">
+                                      {inRange.length} day
+                                      {inRange.length === 1 ? '' : 's'}
+                                      <span className="ml-1 opacity-60">
+                                          · pause for details
+                                      </span>
+                                  </p>
+                              ) : null}
+                              {showDetail ? (
+                                <>
                               <p className="text-muted-foreground">
                                   Total:{' '}
                                   <span className="font-mono tabular-nums">
@@ -711,13 +762,15 @@ function SpendingHeatmapImpl({
                                       No spending in this range.
                                   </p>
                               ) : null}
-                              {viewHref ? (
+                              {viewHref && !dragging ? (
                                   <a
                                       href={viewHref}
                                       className="mt-2 inline-block text-sky-600 hover:text-sky-700 hover:underline dark:text-sky-400"
                                   >
                                       View in transactions →
                                   </a>
+                              ) : null}
+                                </>
                               ) : null}
                           </div>
                       );
