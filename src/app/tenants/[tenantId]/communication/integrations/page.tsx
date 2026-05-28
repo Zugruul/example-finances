@@ -21,6 +21,7 @@ import {
     removeCommunicationIntegrationAction,
 } from '@/server/communication';
 import { PROVIDER_CHANNELS } from '@/domains/communication';
+import { IntegrationConnectForm } from './integration-connect-form';
 
 type Params = { tenantId: string };
 
@@ -211,66 +212,7 @@ export default async function CommunicationIntegrationsPage(props: {
                         <CardTitle>Connect a provider</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <form action={connect} className="grid gap-3 sm:grid-cols-2">
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="provider">Provider</Label>
-                                <select
-                                    id="provider"
-                                    name="provider"
-                                    required
-                                    defaultValue="twilio"
-                                    className="h-9 rounded-md border bg-background px-3 text-sm"
-                                >
-                                    {Object.entries(PROVIDER_LABELS).map(
-                                        ([id, label]) => (
-                                            <option key={id} value={id}>
-                                                {label}
-                                            </option>
-                                        ),
-                                    )}
-                                </select>
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="label">Label</Label>
-                                <Input
-                                    id="label"
-                                    name="label"
-                                    required
-                                    placeholder="Main Twilio"
-                                />
-                            </div>
-                            <div className="flex flex-col gap-1.5 sm:col-span-2">
-                                <Label htmlFor="config">Config (JSON)</Label>
-                                <textarea
-                                    id="config"
-                                    name="config"
-                                    rows={4}
-                                    required
-                                    className="rounded-md border bg-background px-3 py-2 font-mono text-xs"
-                                    placeholder={PROVIDER_HINTS.twilio}
-                                />
-                                <p className="text-xs text-muted-foreground">
-                                    Per-provider shape:
-                                </p>
-                                <ul className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-                                    {Object.entries(PROVIDER_HINTS).map(
-                                        ([id, hint]) => (
-                                            <li key={id} className="font-mono">
-                                                <span className="font-sans font-medium">
-                                                    {id}:
-                                                </span>{' '}
-                                                {hint}
-                                            </li>
-                                        ),
-                                    )}
-                                </ul>
-                            </div>
-                            <div className="sm:col-span-2">
-                                <SubmitButton pendingLabel="Connecting…">
-                                    Connect
-                                </SubmitButton>
-                            </div>
-                        </form>
+                        <IntegrationConnectForm action={connect} />
                     </CardContent>
                 </Card>
             ) : null}

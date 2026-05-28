@@ -21,6 +21,10 @@ import {
     updatePsychologistNoteAction,
 } from '@/server/psychologist';
 import { Button } from '@/components/ui/button';
+import { NoteEditForm } from './note-edit-form';
+import { NewNoteForm } from './new-note-form';
+import { DraftsBanner } from './drafts-banner';
+import { DraftBadge } from './draft-badge';
 
 type Params = { tenantId: string };
 type SearchParams = { edit?: string };
@@ -92,6 +96,19 @@ export default async function PsychologistNotesPage(props: {
                 </p>
             </header>
 
+            <DraftsBanner
+                tenantId={tenantId}
+                clientNames={Object.fromEntries(
+                    clients.map((c) => [
+                        String(c.clientId),
+                        `${c.firstName} ${c.lastName}`,
+                    ]),
+                )}
+                noteTitles={Object.fromEntries(
+                    sortedNotes.map((n) => [String(n.noteId), n.title]),
+                )}
+            />
+
             <Card>
                 <CardHeader>
                     <CardTitle>Notes ({sortedNotes.length})</CardTitle>
@@ -117,8 +134,14 @@ export default async function PsychologistNotesPage(props: {
                                     >
                                         <div className="flex flex-wrap items-start justify-between gap-3">
                                             <div className="flex min-w-0 flex-col">
-                                                <span className="font-medium">
+                                                <span className="flex items-center gap-2 font-medium">
                                                     {n.title}
+                                                    {!n.isLocked ? (
+                                                        <DraftBadge
+                                                            tenantId={tenantId}
+                                                            noteId={String(n.noteId)}
+                                                        />
+                                                    ) : null}
                                                 </span>
                                                 <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                                                     <span>
@@ -209,37 +232,19 @@ export default async function PsychologistNotesPage(props: {
                                         {editingNoteId === String(n.noteId) &&
                                         canManage &&
                                         !n.isLocked ? (
-                                            <form
-                                                id={`note-${n.noteId}`}
-                                                action={updatePsychologistNoteAction.bind(
-                                                    null,
-                                                    tenantId,
-                                                    String(n.noteId),
-                                                )}
-                                                className="mt-2 flex flex-col gap-2"
-                                            >
-                                                <Input
-                                                    name="title"
-                                                    defaultValue={n.title}
-                                                    required
-                                                    maxLength={200}
+                                            <div id={`note-${n.noteId}`}>
+                                                <NoteEditForm
+                                                    tenantId={tenantId}
+                                                    noteId={String(n.noteId)}
+                                                    initialTitle={n.title}
+                                                    initialBody={n.body}
+                                                    action={updatePsychologistNoteAction.bind(
+                                                        null,
+                                                        tenantId,
+                                                        String(n.noteId),
+                                                    )}
                                                 />
-                                                <textarea
-                                                    name="body"
-                                                    rows={6}
-                                                    defaultValue={n.body}
-                                                    required
-                                                    className="rounded-md border bg-background px-3 py-2 text-sm"
-                                                />
-                                                <div className="flex gap-2">
-                                                    <SubmitButton
-                                                        size="sm"
-                                                        pendingLabel="Saving…"
-                                                    >
-                                                        Save changes
-                                                    </SubmitButton>
-                                                </div>
-                                            </form>
+                                            </div>
                                         ) : (
                                             <p className="mt-2 whitespace-pre-wrap text-sm">
                                                 {n.body}
@@ -259,62 +264,19 @@ export default async function PsychologistNotesPage(props: {
                         <CardTitle>New note</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <form action={create} className="grid gap-3 sm:grid-cols-2">
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="clientId">Client</Label>
-                                <select
-                                    id="clientId"
-                                    name="clientId"
-                                    required
-                                    className="h-9 rounded-md border bg-background px-3 text-sm"
-                                >
-                                    {activeClients.map((c) => (
-                                        <option
-                                            key={String(c.clientId)}
-                                            value={String(c.clientId)}
-                                        >
-                                            {c.firstName} {c.lastName}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                <Label htmlFor="sessionId">Session (optional)</Label>
-                                <select
-                                    id="sessionId"
-                                    name="sessionId"
-                                    defaultValue=""
-                                    className="h-9 rounded-md border bg-background px-3 text-sm"
-                                >
-                                    <option value="">(none)</option>
-                                    {sessions.map((s) => (
-                                        <option
-                                            key={String(s.sessionId)}
-                                            value={String(s.sessionId)}
-                                        >
-                                            {new Date(s.startsAt).toLocaleString()}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="flex flex-col gap-1.5 sm:col-span-2">
-                                <Label htmlFor="title">Title</Label>
-                                <Input id="title" name="title" required maxLength={200} />
-                            </div>
-                            <div className="flex flex-col gap-1.5 sm:col-span-2">
-                                <Label htmlFor="body">Body</Label>
-                                <textarea
-                                    id="body"
-                                    name="body"
-                                    rows={6}
-                                    required
-                                    className="rounded-md border bg-background px-3 py-2 text-sm"
-                                />
-                            </div>
-                            <div className="sm:col-span-2">
-                                <SubmitButton pendingLabel="Saving…">Save note</SubmitButton>
-                            </div>
-                        </form>
+                        <NewNoteForm
+                            tenantId={tenantId}
+                            clients={activeClients.map((c) => ({
+                                clientId: String(c.clientId),
+                                label: `${c.firstName} ${c.lastName}`,
+                            }))}
+                            sessions={sessions.map((s) => ({
+                                sessionId: String(s.sessionId),
+                                clientId: String(s.clientId),
+                                label: new Date(s.startsAt).toLocaleString(),
+                            }))}
+                            action={create}
+                        />
                     </CardContent>
                 </Card>
             ) : null}
