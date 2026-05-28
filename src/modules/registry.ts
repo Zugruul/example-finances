@@ -1,4 +1,8 @@
 import { financesModule, FINANCES_MODULE_ID } from './finances.manifest';
+import {
+    psychologistModule,
+    PSYCHOLOGIST_MODULE_ID,
+} from './psychologist.manifest';
 import type { ModuleManifest } from './types';
 
 /**
@@ -11,6 +15,7 @@ import type { ModuleManifest } from './types';
  */
 export const MODULES: Record<string, ModuleManifest> = {
     [FINANCES_MODULE_ID]: financesModule,
+    [PSYCHOLOGIST_MODULE_ID]: psychologistModule,
 };
 
 export function getModule(id: string): ModuleManifest | undefined {
@@ -22,4 +27,5 @@ export function listModules(): ModuleManifest[] {
 }
 
 export { FINANCES_MODULE_ID } from './finances.manifest';
+export { PSYCHOLOGIST_MODULE_ID } from './psychologist.manifest';
 export type { ModuleManifest, ModulePage } from './types';

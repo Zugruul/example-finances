@@ -39,7 +39,7 @@ import {
 import { type TenantOption } from '@/components/app-shell-tenant-selector';
 import { signOutAction } from '@/server/auth-actions';
 import { Boxes, Building2Icon } from 'lucide-react';
-import { FINANCES_MODULE_ID, financesModule } from '@/modules/finances.manifest';
+import { MODULES, type ModuleManifest } from '@/modules/registry';
 
 export type AppSidebarProps = {
     tenants: TenantOption[];
@@ -301,10 +301,12 @@ function TenantTree({
 }) {
     const inSubtree = pathname.startsWith(`/tenants/${tenant.tenantId}`);
     const [open, setOpen] = useState(inSubtree);
-    // Sync with route changes — when the user navigates INTO this
-    // tenant's subtree from elsewhere, expand automatically.
-    const hasFinances = installedModules.includes(FINANCES_MODULE_ID);
     const tenantId = tenant.tenantId;
+    // Resolve every installed-and-known module on this tenant.
+    const installedManifests: ModuleManifest[] = installedModules
+        .map((id) => MODULES[id])
+        .filter((m): m is ModuleManifest => !!m);
+    const hasAnyModule = installedManifests.length > 0;
 
     return (
         <div className="rounded-md">
@@ -330,13 +332,14 @@ function TenantTree({
             </button>
             {open || inSubtree ? (
                 <div className="ml-3 mt-1 flex flex-col border-l pl-2">
-                    {hasFinances ? (
+                    {installedManifests.map((m) => (
                         <ModuleGroup
-                            module={financesModule}
+                            key={m.id}
+                            module={m}
                             tenantId={tenantId}
                             pathname={pathname}
                         />
-                    ) : null}
+                    ))}
                     {/* Built-in items always present */}
                     <NavLink
                         href={`/tenants/${tenantId}/members`}
@@ -360,7 +363,7 @@ function TenantTree({
                         icon={SettingsIcon}
                         active={pathname === `/tenants/${tenantId}`}
                     />
-                    {!hasFinances ? (
+                    {!hasAnyModule ? (
                         <div className="px-2 py-1.5 text-xs text-muted-foreground">
                             No modules installed.{' '}
                             <Link
@@ -382,7 +385,7 @@ function ModuleGroup({
     tenantId,
     pathname,
 }: {
-    module: typeof financesModule;
+    module: ModuleManifest;
     tenantId: string;
     pathname: string;
 }) {

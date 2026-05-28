@@ -167,6 +167,16 @@ import {
     type TenantModuleStreamPattern,
     type TenantModuleDoc,
 } from '@/domains/tenant-modules';
+import {
+    clientEvents,
+    clientReducer,
+    clientCommands,
+    clientsByTenantApply,
+    clientsByTenantKey,
+    clientsByTenantListen,
+    type ClientStreamPattern,
+    type ClientDoc,
+} from '@/domains/clients';
 
 // ----- HMR-safe singleton bootstrap -----
 
@@ -229,7 +239,8 @@ function buildSorc(metrics: ReturnType<typeof metricsPrometheus>) {
         .setupEvent([...transactionEvents] as unknown as AnyEventClass[])
         .setupEvent([...budgetEvents] as unknown as AnyEventClass[])
         .setupEvent([...templateEvents] as unknown as AnyEventClass[])
-        .setupEvent([...tenantModuleEvents] as unknown as AnyEventClass[]);
+        .setupEvent([...tenantModuleEvents] as unknown as AnyEventClass[])
+        .setupEvent([...clientEvents] as unknown as AnyEventClass[]);
 
     const aggregates = {
         tenant: sorc.aggregate({
@@ -359,6 +370,18 @@ function buildSorc(metrics: ReturnType<typeof metricsPrometheus>) {
             initial: null as ReturnType<typeof templateReducer>,
             reducer: templateReducer as never,
             commands: templateCommands as never,
+        }),
+        client: sorc.aggregate({
+            name: 'Client',
+            streams: ['client-*' as ClientStreamPattern],
+            events: [
+                { name: 'ClientCreated', version: '*' },
+                { name: 'ClientUpdated', version: '*' },
+                { name: 'ClientArchived', version: '*' },
+            ],
+            initial: null as ReturnType<typeof clientReducer>,
+            reducer: clientReducer as never,
+            commands: clientCommands as never,
         }),
         tenantModule: sorc.aggregate({
             name: 'TenantModule',
@@ -636,6 +659,23 @@ function buildReadModels(
         apply: monthlyAggregateApply as never,
     });
 
+    const clientsByTenant = new SorcReadModel<
+        ClientDoc,
+        any,
+        any,
+        typeof sorc
+    >(sorc, {
+        name: 'clients-by-tenant',
+        storeName: 'mongostore',
+        events: clientsByTenantListen as never,
+        store: makeStore<ClientDoc>(client, 'rm_clients_by_tenant', [
+            { key: { clientId: 1 }, options: { unique: true } },
+            { key: { tenantId: 1 } },
+        ]),
+        key: clientsByTenantKey as never,
+        apply: clientsByTenantApply as never,
+    });
+
     const tenantModules = new SorcReadModel<
         TenantModuleDoc,
         any,
@@ -670,6 +710,7 @@ function buildReadModels(
         recurringTemplates,
         monthlyAggregate,
         tenantModules,
+        clientsByTenant,
     };
 }
 
@@ -706,6 +747,7 @@ if (!cache) {
     void readModels.recurringTemplates.subscribe();
     void readModels.monthlyAggregate.subscribe();
     void readModels.tenantModules.subscribe();
+    void readModels.clientsByTenant.subscribe();
 
     cache = { bundle, metrics, readModels };
     if (process.env.NODE_ENV !== 'production') {
